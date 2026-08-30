@@ -312,7 +312,7 @@ try:
             print(f"#{rank} (score={hit.score:.4f})")
             print(f"  Video: {title}")
             if url:
-                print(f"  Link: {url}&t={int(float(start))}")
+                print(f"  Link: {url}?t={int(float(start))}")
             print(f"  Text: {text[:150]}{'...' if len(text) > 150 else ''}")
             print()
 

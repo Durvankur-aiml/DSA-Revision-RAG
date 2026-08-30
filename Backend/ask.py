@@ -227,7 +227,7 @@ def format_sources(chunks):
         except (TypeError, ValueError):
             start = 0
 
-        timestamp_link = f"{url}&t={start}" if url else "N/A"
+        timestamp_link = f"{url}?t={start}" if url else "N/A"
 
         lines.append(
             f"  [{i}] {title} — {start}s\n"

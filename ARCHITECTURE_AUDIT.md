@@ -1,92 +1,100 @@
 # MISSION ANTHROPIC — ARCHITECTURE AUDIT
 
-Audit date: 2026-08-29
-Scope: read-only inspection. **No project files were modified.**
-Method: read all 5 backend scripts, audited all 30 transcript + 30 embedding files, decoded all 827 Qdrant points directly from `storage.sqlite`.
+Original audit: 2026-08-29 (read-only)
+**Revised: 2026-08-30** — re-verified independently against disk and the vector DB. Numbers and status below are current as of this revision; the 2026-08-29 findings are preserved in section J as resolved history.
 
-Everything below is measured from the actual repo. Where something could not be verified, it is labelled **UNVERIFIED**.
+Method: read all 6 backend scripts, `ast.parse` on each, audited every transcript and embedding file, decoded all 1936 Qdrant points, enumerated the full git object history.
+
+Where something could not be verified, it is labelled **UNVERIFIED**.
 
 ---
 
 ## HEADLINE
 
-Two things you should know before anything else:
+**The pipeline is healthy and the index is clean.** Both critical problems from the 2026-08-29 audit are resolved:
 
-1. **`Backend/transcribe_audio.py` does not run.** It has a hard `SyntaxError` on line 18. It was corrupted by a copy-paste out of a rendered markdown view. Your ingestion pipeline is currently broken at the transcription stage. There is no backup and no git history for this project.
+1. `Backend/transcribe_audio.py` **runs**. It was a 1168-line markdown-paste wreck with a hard `SyntaxError`; it is now 303 lines and compiles. All six backend scripts pass `ast.parse`.
+2. The **118 redundant Qdrant points are gone and have stayed gone** across 130 videos of subsequent processing. Zero legacy orphans, zero duplicate identities, zero title-keyed records.
 
-2. **Your Qdrant collection contains 118 redundant points out of 827 (14.3%).** All of them are copies of one video (C++ Basics L1), which is present **three times** under two different identities. This is the confirmed cause of both the "duplicate retrieval results" and the "malformed timestamp URL" you had already noticed.
+Integrity is exact: **1936 Qdrant points == 1936 embedding records == 1936 transcript chunks**, with per-video parity holding for all 130 indexed videos.
 
-The good news, and it is real: **transcript → embedding integrity is perfect (768 = 768, every single video matches),** and 768 of 827 Qdrant points have correct deterministic IDs that verify exactly against `make_point_id()`. The core pipeline design is sound. The problems are debris and one bad paste, not architecture.
+Remaining work is hygiene, not architecture: git line-ending noise, a stale lock file, and a path-capitalisation decision that matters only when this leaves Windows.
 
 ---
 
 ## A. CURRENT ARCHITECTURE
 
 ```
-download_audio.py     playlist → per-video mp3 + metadata json
+download_audio.py      playlist → per-video mp3 + metadata json
         ↓
-transcribe_audio.py   mp3 → windowed Whisper → ~90s chunks → transcript json   [BROKEN]
+transcribe_audio.py    mp3 → windowed Whisper → ~90s chunks → transcript json
         ↓
-generate_embeddings.py transcript json + metadata → 384-dim vectors → embeddings json
+generate_embeddings.py transcript + metadata → 384-dim vectors → embeddings json
         ↓
-load_to_qdrant.py     embeddings json → deterministic-ID points → Qdrant (upsert, additive)
+load_to_qdrant.py      embeddings json → deterministic-ID points → Qdrant (upsert, additive)
         ↓
-ask.py                question → embed → search → threshold filter → Gemini → answer + sources
+ask.py                 question → embed → search → threshold filter → Gemini → answer + sources
+
+verify_pipeline.py     [out of band] asserts integrity across every stage above
 ```
 
-Phase 1 (ingestion) and Phase 2 (RAG answering) are **both already built**. `ask.py` exists and is a complete, working CLI RAG loop. Your own notes describe Phase 2 as "next" — that is out of date; it is done.
+Phase 1 (ingestion) and Phase 2 (RAG answering) are both built and working.
 
-Actual folder layout (differs from your conceptual doc):
+Actual folder layout:
 
 ```
 Mission Anthropic - RAG/
-├── Backend/            (capital B; 5 scripts, 2285 lines)
+├── Backend/            6 scripts, 2166 lines
 ├── Data/
-│   ├── Audio/          36 mp3 + 3 incomplete .webm.part
-│   ├── Metadata/       35 json          <- extra stage not in your original doc
-│   ├── Transcripts/    30 json
-│   └── embeddings/     30 json          (lowercase 'e')
+│   ├── Audio/          160 mp3 (4.3 GB, git-ignored)
+│   ├── Metadata/       160 json   <- source of truth for title + url
+│   ├── Transcripts/    143 json
+│   └── embeddings/     130 json   (lowercase 'e')
 ├── Frontend/           EMPTY
-├── qdrant_db/          collection 'striver_a2z', 827 points, 4.3 MB
+├── qdrant_db/          collection 'striver_a2z', 1936 points
 ├── venv/
-└── ROADMAP.md
+├── ROADMAP.md
+├── README.md
+├── AUDIT_LOG.md
+└── ARCHITECTURE_AUDIT.md
 ```
 
-Note `Data/Metadata/` — a per-video metadata layer that is not in your architecture doc but is load-bearing. It is the single source of truth for `video_title` and `youtube_url`.
+`Data/Metadata/` is load-bearing and absent from the original design doc. It is the single source of truth for `video_title` and `youtube_url`.
 
 ---
 
-## B. DATA FLOW & MEASURED COUNTS
+## B. DATA FLOW & MEASURED COUNTS (2026-08-30)
 
 | Stage | Count | Status |
 |---|---|---|
-| mp3 files | 36 | 35 real videos + 1 duplicate keyed by title |
-| metadata json | 35 | matches the 35 real videos |
-| transcript json | 30 | 29 real videos + 1 title-keyed dup; **6 mp3 still untranscribed** |
-| transcript chunks | 768 | — |
-| embedding records | 768 | **exact match, zero loss** |
-| Qdrant points | 827 | 768 correct + **59 legacy orphans** |
-| distinct text values | 709 | → 118 points are redundant copies |
+| mp3 files | 160 | all named `{video_id}.mp3` |
+| metadata json | 160 | every mp3 has one — no fallback risk |
+| transcript json | 143 | climbing — a transcription run was live during the audit |
+| embedding json | 130 | |
+| transcript chunks (of the 130 embedded) | 1936 | |
+| embedding records | 1936 | **exact match** |
+| Qdrant points | 1936 | **exact match, zero orphans** |
+| indexed videos | 130 | per-video parity exact for all |
 
-The identity chain `VIDEO_ID → mp3 → transcript → embeddings → Qdrant payload` holds for every video **except** the one title-keyed intruder.
+Playlist target is 316 videos. 17 mp3 await transcription, 13 transcripts await embedding. Counts in this table are a moving snapshot — re-run `verify_pipeline.py` for live figures.
 
-Untranscribed mp3s (audio downloaded, no transcript yet): `3Zv-s9UUrFM`, `N0MgLvceX7M`, `Z0R2u6gd3GU`, `bR7mQgwQ_o8`, `vwZj1K0e9U8`, `xvNwoz-ufXA`.
-
-Incomplete downloads: `DhFh8Kw7ymk.webm.part`, `eD95WRfh81c.webm.part`, `eZr-6p0B7ME.webm.part`.
+The identity chain `VIDEO_ID → mp3 → transcript → embeddings → Qdrant payload → source link` holds for every record with no exceptions.
 
 ---
 
 ## C. FILE RESPONSIBILITIES
 
-**`download_audio.py`** (236 lines) — Clean. Interactive batch download with `batch_size` + `start_position`. Always names files `{video_id}.mp3` / `{video_id}.json`; never uses titles. Writes metadata only after the mp3 is confirmed on disk. `already_downloaded()` requires **both** mp3 and metadata before skipping — correctly conservative. This file did **not** cause the title-keyed duplicate.
+**`download_audio.py`** (421 lines) — Clean. Interactive batch download with `batch_size` + `start_position`. Always names files `{video_id}.mp3` / `{video_id}.json`, never titles. Writes metadata only after the mp3 is confirmed present. `already_downloaded()` requires **both** mp3 and metadata before skipping.
 
-**`transcribe_audio.py`** (1168 lines) — **BROKEN, cannot execute.** Design (readable through the corruption): 300s windows, Whisper `small`, per-window offset restoration to global timestamps, 5s gap warnings, per-video sponsor skip ranges (`EAR7De6Goz4: [(170,250)]`), ~90s chunking, atomic temp-file save, `is_valid_transcript_file()` for resumable skipping. The `_windows_temp/` directory is absent, which confirms temp cleanup works correctly.
+**`transcribe_audio.py`** (303 lines) — **Working.** 300s windows, Whisper `small`, per-window offset restoration to global timestamps, 5s gap warnings (diagnostic only), per-video sponsor skip ranges (`EAR7De6Goz4: [(170, 250)]`), ~90s chunking, atomic temp-then-replace save, resumable via already-transcribed set.
 
-**`generate_embeddings.py`** (218 lines) — Clean and well-guarded. `all-MiniLM-L6-v2`, 384-dim, CUDA with CPU fallback, batch 32, per-chunk validation, atomic save, skip-if-already-embedded. **Critical behaviour:** it derives `video_id` from the *transcript filename* (`os.path.splitext(f)[0]`), then looks up `Data/Metadata/{video_id}.json`. If that metadata file is missing it silently falls back to `video_title = video_id` and `youtube_url = f"https://youtu.be/{video_id}"`. That fallback is the mechanism that produced the malformed URL.
+**`generate_embeddings.py`** (225 lines) — Clean. `all-MiniLM-L6-v2`, 384-dim, CUDA with CPU fallback, batch 32, per-chunk validation, atomic save, skip-if-exists. Derives `video_id` from the transcript *filename*, then reads `Data/Metadata/{video_id}.json`. If metadata is missing it warns and falls back to a fabricated `https://youtu.be/{filename}` — see G2.
 
-**`load_to_qdrant.py`** (337 lines) — Strong. Validates 8 required keys, vector type/length, non-empty text. Additive upsert, never wipes. `make_point_id = int(md5(f"{video_id}_{chunk_index}")[:12], 16)` — 48 bits, collision probability at this scale ~1e-9, effectively zero. Verified: **all 768 hash-ID points match this function exactly.** Batched uploads of 100 with per-batch error capture, post-upload count verification, built-in smoke-test query.
+**`load_to_qdrant.py`** (337 lines) — Strong validation: 8 required keys, vector type and length, non-empty text. Additive upsert, never wipes. `make_point_id = int(md5(f"{video_id}_{chunk_index}")[:12], 16)` — 48 bits, collision probability ~1e-9 at this scale. All 1936 points verified against it. Batches of 100 with per-batch error capture, post-upload count check, built-in smoke query. **Structural outlier — see H1.**
 
-**`ask.py`** (326 lines) — Complete RAG loop, genuinely well-defended: validates API key, Qdrant dir, collection existence, non-zero point count, embedding dimension vs collection dimension, question length, empty Gemini responses, and retries twice. `TOP_K=4`, `MIN_SCORE_THRESHOLD=0.25`, prompt instructs context-only answering. Two defects (below).
+**`ask.py`** (326 lines) — Complete RAG loop, well defended: validates API key, Qdrant dir, collection existence, non-zero point count, embedding dim vs collection dim, question length, empty Gemini responses, retries twice. `TOP_K=4`, `MIN_SCORE_THRESHOLD=0.25`, prompt instructs context-only answering.
+
+**`verify_pipeline.py`** (554 lines) — **New 2026-08-30.** The post-batch integrity gate. Asserts distinctness, not just counts. See section K.
 
 ---
 
@@ -105,114 +113,70 @@ Transcript — `Data/Transcripts/{video_id}.json`: `[{ "start": float, "end": fl
 Embeddings — `Data/embeddings/{video_id}_embeddings.json`: array of
 `{ chunk_index:int, video_id:str, video_title:str, youtube_url:str, start:float, end:float, text:str, embedding:float[384] }`
 
-Qdrant point: `id` = 48-bit md5 int; payload = the same fields **minus** `embedding`. Collection `striver_a2z`, size 384, distance Cosine.
+Qdrant point: `id` = 48-bit md5 int; payload = the same 7 fields **minus** `embedding`. Collection `striver_a2z`, size 384, distance Cosine. Verified uniform across all 1936 points.
 
 ---
 
 ## E. STRENGTHS (keep these, do not refactor them)
 
-- **Verified zero data loss** transcript → embedding across all 30 files.
-- **Deterministic, idempotent point IDs** — re-running the loader overwrites rather than duplicates. All 768 verified correct.
-- **Additive loading** — no wipe-and-reload, so multi-video scaling is safe.
-- **Atomic writes** (`.tmp` + `os.replace`) in both transcript and embedding stages — no half-written JSON.
-- **Resumability everywhere** — skip-if-exists at download, transcribe, and embed stages.
-- **Genuinely good error handling in `ask.py`,** including the dimension-vs-collection sanity check, which is a mistake most people only find in production.
-- **Timestamp offset restoration** for windowed audio — conceptually the trickiest part of the pipeline, and it is right.
-- **Temp window cleanup works** — `_windows_temp/` is absent after runs.
+- **Verified zero data loss and zero duplication** — 1936 = 1936 = 1936, per-video, with distinctness separately asserted.
+- **Deterministic, idempotent point IDs** — re-running the loader overwrites rather than duplicates. All 1936 verified.
+- **Additive loading** — no wipe-and-reload, so scaling is safe.
+- **Atomic writes** (`.tmp` + `os.replace`) in the transcript and embedding stages — no half-written JSON.
+- **Resumability at every stage** — skip-if-exists at download, transcribe, and embed.
+- **Timestamp offset restoration** for windowed audio — the trickiest part of the pipeline, and it is correct.
+- **Good error handling in `ask.py`**, including the dimension-vs-collection check most people only discover in production.
+- **No LangChain or agent framework anywhere.** Correct call. Every line of the retrieval path is understood, which is worth more than any abstraction.
 
 ---
 
-## F. CONFIRMED PROBLEMS
+## F. CONFIRMED PROBLEMS (open)
 
-### F1. `transcribe_audio.py` is syntactically invalid — CRITICAL
+### F1. Stale `.git/index.lock` — blocks all commits
 
-`python -c "import ast; ast.parse(open('Backend/transcribe_audio.py').read())"` → `SyntaxError: invalid syntax` at line 18.
+A 0-byte `.git/index.lock` dated 17:14 was left behind by a git process that died. Every `git add` and `git commit` fails until it is removed. Fix: confirm no git or IDE operation is running, then delete it.
 
-Three distinct markdown-paste artifacts:
+### F2. No `.gitattributes` — 390 files show as modified with zero real changes
 
-| Artifact | Count | Where | Should be |
-|---|---|---|---|
-| Bold-eaten dunders | 2 | L18 `**file**`, L1167 `if **name** == "**main**":` | `__file__`, `__name__`/`__main__` |
-| Literal ``` fences | 16 | L87, 95, 103, 124, 128, 156, 166, 201, 211, 238, 247, 312, 327, 648, 658, 1159 | deleted |
-| Flattened indentation | 3 top-level defs | bodies sitting at column 0 | re-indented |
+Files on disk are CRLF, HEAD stores LF, `core.autocrlf` is unset. Verified per-file with `git diff --ignore-cr-at-eol`: **394 files with a raw diff, of which only 4 are real — the other 390 differ by line endings alone.** This actively hides genuine changes in `git status`.
 
-The mechanism is unambiguous: `__file__` became `**file**` because markdown read the double underscores as bold. This came out of a chat window, not an editor.
+Fix: add `.gitattributes` (`* text=auto`, `*.py text eol=lf`, `*.json text eol=lf`), then `git add --renormalize .` — but only while no transcription run is active, since it rewrites all 390 tracked JSON files.
 
-Encouraging detail: indentation *inside* the fenced regions survived (46.5% of lines are still indented). The fences wrap correctly-indented blocks. So this is a mechanical repair of ~21 specific locations, not a rewrite of 1168 lines. **The logic is recoverable.**
+### F3. Stale remote URL after the GitHub rename
 
-### F2. Every source link `ask.py` prints is malformed — HIGH
-
-`ask.py:230` — `timestamp_link = f"{url}&t={start}"`, and metadata stores `youtube_url` as `https://youtu.be/{id}`.
-
-Result: `https://youtu.be/EAR7De6Goz4&t=170`
-
-There is no `?` in that URL, so `&t=170` is parsed as part of the *path*, not a query parameter. YouTube sees a video ID of `EAR7De6Goz4&t=170`, which does not exist. **This breaks all source links, not just the title-keyed one.** You had noticed "at least one" malformed link — it is actually all of them.
-
-Correct forms: `https://youtu.be/{id}?t={s}` or `https://www.youtube.com/watch?v={id}&t={s}s`.
-
-Same defect at `load_to_qdrant.py:315` in the smoke-test output.
-
-### F3. 118 of 827 Qdrant points are redundant copies of one video — HIGH
-
-C++ Basics L1 exists **three times**:
-
-| # | video_id in payload | Point IDs | Count | Source |
-|---|---|---|---|---|
-| 1 | `EAR7De6Goz4` | **sequential 0–58** | 59 | legacy loader run — orphaned |
-| 2 | `EAR7De6Goz4` | md5 hashes | 59 | correct, from `EAR7De6Goz4_embeddings.json` |
-| 3 | `C++ Basics in One Shot - Strivers A2Z DSA Course - L1` | md5 hashes | 59 | title-keyed file, **malformed URL** |
-
-177 points where there should be 59.
-
-Two independent causes:
-
-**(a) Legacy sequential IDs.** 59 points carry IDs `0`–`58`. Your current `make_point_id()` produces 48-bit hashes. So an *earlier version* of `load_to_qdrant.py` used a plain loop counter as the ID. Because upsert matches on ID, those old points can never be overwritten by the current loader — they are permanent orphans, unreachable from any file on disk. This is the exact reason `827 − 768 = 59`.
-
-**(b) Title-keyed duplicate identity.** `Data/Transcripts/C++ Basics in One Shot - Strivers A2Z DSA Course - L1.json` and `Data/embeddings/C++ Basics in One Shot...*_embeddings.json` exist alongside the correct `EAR7De6Goz4` versions. Verified byte-identical: same 59 chunks, `identical text lists? True`. Because no `Data/Metadata/C++ Basics...json` exists, `generate_embeddings.py` hit its fallback and stamped `youtube_url = "https://youtu.be/C++ Basics in One Shot - Strivers A2Z DSA Course - L1"`.
-
-`download_audio.py` cannot produce title-named files, so this is **legacy debris from an early manual/single-video experiment, not a live bug.** It will not recur — but it will keep polluting retrieval until removed.
-
-**Why this actually hurts:** `TOP_K = 4`. A C++ basics question can burn 3 of 4 context slots on identical text, and can cite the record with the broken URL. This is precisely the "duplicate-looking retrieval results" you observed. Your instinct not to assume corruption was right — the DB is not corrupt, it has debris.
-
-### F4. Your 827-point verification was a false positive — process lesson
-
-`673 + 154 = 827` matched, and you reasonably concluded the pipeline was healthy. It was healthy *with respect to record loss* — that conclusion holds. But count arithmetic cannot detect duplicates, and 59 orphans + 59 title-keyed dupes were already sitting in the collection at the time.
-
-The lesson worth keeping: **count checks prove nothing was lost; they do not prove nothing extra is present.** Distinctness checks are a separate assertion. Both are needed.
-
-### F5. No version control — CRITICAL (process)
-
-The parent `.git` belongs to an unrelated repo (`Day 2: First Python Program`). `git ls-files` returns nothing for this project. No `.bak`, `~`, `.orig`, or `.tmp` copies exist anywhere.
-
-This is *why* F1 is critical rather than a five-second undo. A 1168-line file was destroyed by one paste with no recovery path.
+`origin` still points at `https://github.com/Durvankur-aiml/DSA-Revision---RAG.git`. GitHub redirects renamed repositories, so pushes still succeed, but the URL should be corrected to the current slug with `git remote set-url origin <new-url>`.
 
 ---
 
 ## G. POTENTIAL RISKS (not currently breaking)
 
-**G1. Path case mismatch.** All scripts use lowercase `"data"`, `"audio"`, `"transcripts"`, `"metadata"`; disk has `Data/`, `Audio/`, `Transcripts/`, `Metadata/` (only `embeddings/` matches). Windows is case-insensitive so this works today. It will break instantly on Linux, Docker, WSL, or any cloud deploy.
+**G1. Path case will misbehave on Linux — and it will not crash.** All six scripts use lowercase literals (`os.path.join(BASE_DIR, "data", "audio")`); disk is `Data/Audio/`, `Data/Transcripts/`, `Data/Metadata/`, `Data/embeddings/`. Windows is case-insensitive so this works today.
 
-**G2. Silent metadata fallback.** `generate_embeddings.py:30-37` prints a warning then continues with a fabricated URL. It already caused F3(b). A missing metadata file should arguably be a hard skip, not a silent fallback, because the bad data is indistinguishable downstream.
+The failure mode on a case-sensitive filesystem is **silent duplicate work, not an error.** `download_audio.py` and `transcribe_audio.py` call `os.makedirs(..., exist_ok=True)` at module level, so they would *create* an empty lowercase `data/audio` tree alongside the real one. `already_downloaded()` would then return False for all 160 videos and re-download 4.3 GB, and transcription would start from zero into the parallel tree. Qdrant would not duplicate — deterministic IDs overwrite — so the cost is GPU-hours and bandwidth, not corruption.
 
-**G3. Qdrant local mode is single-process.** `QdrantClient(path=...)` takes an exclusive lock. `ask.py` opens Qdrant at import time, so it and `load_to_qdrant.py` can never run concurrently. Fine now; a real constraint the moment you add the frontend from ROADMAP Tier 2.6.
+Recommended fix: rename the disk directories to lowercase, so the scripts need no changes and `.gitignore` becomes literally correct. Requires a two-step `git mv --force` because `core.ignorecase=true` hides pure case renames.
 
-**G4. `ask.py` does no deduplication.** No filtering on repeated `(video_id, chunk_index)` or near-identical text. Cleaning the DB fixes today's symptom; a dedup pass in retrieval would make it structurally impossible.
+**G2. Silent metadata fallback.** `generate_embeddings.py` warns then continues with a fabricated URL when metadata is missing. This is the mechanism that produced the historical title-keyed debris (J3). Currently harmless — all 160 mp3s have metadata — but a missing file should arguably be a hard skip, since the bad data is indistinguishable downstream.
 
-**G5. `GEMINI_MODEL = "gemini-3.6-flash"` — UNVERIFIED.** I could not reach the network to confirm this model ID, and it postdates my training. It does not match the naming pattern I know (1.5/2.0/2.5 flash/pro), but you report the RAG loop works end-to-end, which suggests it resolves fine. **Not listed as a bug** — just verify it if you ever see API errors.
+**G3. Qdrant local mode is single-process.** `QdrantClient(path=...)` takes an exclusive lock. `ask.py`, `load_to_qdrant.py` and `verify_pipeline.py` can never run concurrently. `verify_pipeline.py` reports this explicitly rather than emitting a confusing stack trace. Becomes a real constraint at the frontend stage (ROADMAP Tier 2.6).
 
-**G6. 3 stalled `.webm.part` files.** No mp3 was produced, so `already_downloaded()` returns False and those videos will be retried correctly. Harmless, but they are dead bytes and could confuse a future audit.
+**G4. `ask.py` does no deduplication** on repeated `(video_id, chunk_index)` or near-identical text. The index is clean today, so nothing is wrong; retrieval-side dedup would make the historical failure structurally impossible.
 
-**G7. Untranscribed backlog.** 6 mp3s have no transcript. Expected given F1 — transcription cannot run. Worth confirming they are pending-by-interruption and not pending-by-failure once the script is fixed.
+**G5. `GEMINI_MODEL = "gemini-3.6-flash"` — UNVERIFIED.** No network egress available to confirm this model ID. It does not match the naming pattern of known releases, but the loop reportedly works end to end, which suggests it resolves. **Not a bug** — check only if API errors appear.
+
+**G6. `_windows_temp/` survives an interrupted run.** `os.rmdir` cannot remove a non-empty directory and the failure is swallowed, so leftover window files persist silently. `verify_pipeline.py` distinguishes stale leftovers from a live run by file age.
 
 ---
 
-## H. UNNECESSARY COMPLEXITY
+## H. UNNECESSARY COMPLEXITY / INCONSISTENCY
 
-Very little — this is a lean codebase and you should not let anyone talk you into a framework rewrite.
+This is a lean codebase and it should not be handed to a framework rewrite. Three specific deviations:
 
-- **`load_to_qdrant.py` Steps 7–8** load a second `SentenceTransformer` purely to run one smoke-test query, roughly doubling the script's memory footprint for a debug convenience. Reasonable while scaling; a `--test` flag would be cleaner.
-- **`ask.py` does all setup at module import** rather than inside `main()`. It makes the script un-importable and un-testable, and grabs the Qdrant lock on import. Refactor only when you build the frontend.
-- **No LangChain / agent framework anywhere.** Correct call. Do not add one. You currently understand every line of your retrieval path, which is worth more than any abstraction — and it is exactly what makes this defensible in an interview.
+**H1. `load_to_qdrant.py` has no `def main()` and no `__main__` guard.** Roughly 290 lines execute at import. The other five scripts all follow `fail()` + `def main()` + guard. Concrete consequence: `verify_pipeline.py` must re-implement `make_point_id()` rather than import it, because importing would run the entire loader.
+
+**H2. `ask.py` does all setup at module top level** (lines 45–115) rather than inside `main()`: Qdrant connect, model load, Gemini client. It has a `__main__` guard but grabs the Qdrant lock on import anyway, which makes it un-importable and un-testable. Worth fixing when the frontend arrives.
+
+**H3. `load_to_qdrant.py` steps 7–8** load a second `SentenceTransformer` purely to run one smoke query, roughly doubling the script's memory footprint for a debug convenience. Reasonable while scaling; a `--test` flag would be cleaner.
 
 ---
 
@@ -220,26 +184,62 @@ Very little — this is a lean codebase and you should not let anyone talk you i
 
 Strict order. One change, one test, one verification.
 
-**Step 0 — `git init` before touching anything.** Non-negotiable. F1 cost you a 1168-line file because this did not exist. Add a `.gitignore` for `venv/`, `Data/Audio/*.mp3`, `qdrant_db/`, then commit the current state *including the broken file* so the corruption itself is recoverable while we repair it.
+1. **Let the running transcription batch finish.** Counts move while it runs.
+2. **Clear the stale `.git/index.lock`,** then commit the pending changes (URL fix, `verify_pipeline.py`, `.gitignore`, these docs).
+3. **Add `.gitattributes` and `git add --renormalize .`** to kill the 390-file CRLF noise. Only while nothing is writing to `Data/`.
+4. **Decide the path-case fix** (G1). Lowercase rename recommended.
+5. **Resume batches toward 316,** running `python Backend/verify_pipeline.py` after each one.
+6. **Only then** resume ROADMAP work: persona-grounded prompt, then per-chunk topic tagging.
 
-**Step 1 — repair `transcribe_audio.py`.** ~21 mechanical fixes: delete 16 fence lines, restore 2 dunders, re-indent 3 def bodies. Validate with `ast.parse` first, then re-transcribe one *already-completed* video to a scratch directory and diff the chunk count against its existing transcript. If a known video reproduces its existing chunk count, the logic survived the corruption intact. Do not run the 6-video backlog until that diff is clean.
-
-**Step 2 — fix the URL bug.** One-line change in `ask.py:230` (`&t=` → `?t=`), same at `load_to_qdrant.py:315`. Verify by clicking a printed link. Independent of everything else; safe to do anytime.
-
-**Step 3 — clean the 118 redundant points.** Only after Steps 0–2, and back up `qdrant_db/` first. Delete the 59 sequential-ID points (`id < 100000` is a clean, safe selector — no legitimate hash ID is that small) and the 59 points whose `video_id` contains a space. Then delete the two title-keyed files from `Transcripts/` and `embeddings/`. Verify: 827 → 709, and 709 should equal your distinct-text count. That is a real distinctness assertion, not just arithmetic.
-
-**Step 4 — add a `verify_pipeline.py`.** Assert per-video: transcript chunks == embedding records == Qdrant points, plus zero duplicate `(video_id, chunk_index)`, zero duplicate text, zero URLs containing a space, and every `video_id` matching `^[A-Za-z0-9_-]{11}$`. Any of those checks would have caught F3 months ago. This is the highest-leverage file you do not yet have.
-
-**Only then** resume ROADMAP work (batch scaling, then persona prompt, then topic tagging).
-
-Do not start on the frontend, reranking, or topic tagging until Step 4 passes. Everything in ROADMAP Tier 1+ assumes a trustworthy index, and right now 14.3% of your index is noise.
+Do not start the frontend, reranking, or topic tagging before step 5 is habitual. Everything in ROADMAP Tier 1+ assumes a trustworthy index.
 
 ---
 
-## WHAT TO CORRECT IN YOUR OWN NOTES
+## J. RESOLVED HISTORY (from the 2026-08-29 audit)
 
-- Phase 2 (RAG answering) is **built**, not pending. `ask.py` is a complete working loop.
-- Folder names are `Backend/`, `Data/Audio/`, `Data/Transcripts/`, `Data/Metadata/`, `Data/embeddings/` — capitalised, and there is a metadata stage your architecture doc omits.
-- "Malformed timestamp URL" is **all** links, not one.
-- "Duplicate retrieval results" is confirmed, quantified at 118 points, root-caused, and fixable — the database is not corrupt.
-- The 827-point integrity check was sound about *loss* and blind to *duplication*.
+Preserved because the failure modes are instructive, not because they are still live.
+
+**J1. `transcribe_audio.py` was syntactically invalid — RESOLVED.** `SyntaxError` at line 18. Corrupted by pasting code out of a *rendered markdown view*, which produced three artifact types: bold-eaten dunders (`os.path.abspath(**file**)` instead of `__file__`, `if **name** == "**main**":`), 16 literal ``` fence lines, and 3 top-level `def` bodies flattened to column 0. The mechanism was unambiguous — markdown read `__file__`'s double underscores as bold emphasis. Now rewritten compactly at 303 lines and verified with `ast.parse`. **Root lesson: never paste code out of a rendered view; use a raw/copy button or a file.**
+
+**J2. Every source link was malformed — RESOLVED.** `ask.py:230` built `f"{url}&t={start}"` while metadata stores `youtube_url` as `https://youtu.be/{id}`. With no `?` in the URL, `&t=170` parsed as part of the path, so YouTube saw a nonexistent video ID. This broke *all* links, not one. Fixed to `?t=` in `ask.py:230` and `load_to_qdrant.py:315`.
+
+**J3. 118 of 827 Qdrant points were redundant — RESOLVED.** C++ Basics L1 existed three times (177 points where 59 belonged): 59 points with **sequential ids 0–58** from a legacy loader that used a loop counter — permanently orphaned, since upsert matches on id; 59 correct hash-ID points; and 59 hash-ID points keyed by *title* rather than video_id, carrying a fabricated malformed URL from the G2 fallback. `download_audio.py` cannot produce title-named files, so the third set was legacy debris from an early manual experiment, not a live bug. Cleaned; verified still clean 130 videos later.
+
+**J4. The 827-point verification was a false positive — the key process lesson.** `673 + 154 = 827` matched, and the pipeline was declared healthy. That conclusion was sound about *record loss* and blind to *duplication* — 118 redundant points were already present. **Count checks prove nothing was lost; they do not prove nothing extra is present.** Distinctness is a separate assertion. This is the entire reason `verify_pipeline.py` exists.
+
+**J5. No version control — RESOLVED.** The project had no git, which is why J1 cost a 1168-line file with no recovery path. Now 4 commits on `main` tracking `origin/main`.
+
+**J6. `.gitignore` case bug — RESOLVED.** Patterns were lowercase (`data/audio/`) while the folders are capitalised (`Data/Audio/`). `git check-ignore -v` proved the match depended entirely on `core.ignorecase=true`, a Windows default: on a case-sensitive clone or CI runner, 4.3 GB of audio would have been staged. Now `[Dd]ata/[Aa]udio/`, verified to match with `core.ignorecase=false`.
+
+**J7. Audio leak check — CLEAN.** Full history enumerated: zero commits have ever touched `.mp3`, `.webm`, `.m4a`, `.wav`, `.opus`, `.ogg`, `.flac`, `.aac`, `.mp4`, `.mkv`, `.part` or `.ytdl`, and no path under any `audio/`, `venv/`, `qdrant_db/`, `_windows_temp/` or `__pycache__/` directory has ever existed in any commit. Repo is 10.96 MiB across 405 historical paths. One 711.9 KB piece of J3 debris (`Data/embeddings/C++ Basics in One Shot - ...json`) does remain in history, added in `4825095` and removed in `5fe1e8a`; **deliberately not purged** — a history rewrite and force-push is a poor trade for 0.7 MB on a published repo.
+
+---
+
+## K. `verify_pipeline.py` — WHAT IT GUARANTEES
+
+Run after every batch: `python Backend/verify_pipeline.py`. Exit code 0 = clean, 1 = failure, so it can gate a batch. Requires the Qdrant lock, so nothing else may hold it.
+
+Three severity levels: **FAIL** (integrity broken), **WARN** (suspicious but legitimate cases exist), **INFO** (progress and backlog).
+
+Checks performed:
+
+1. Every transcript and embedding file parses.
+2. Debris: `.part` / `.tmp` / stale `_windows_temp` contents, distinguished from a live run by file age.
+3. Every `video_id` matches `^[A-Za-z0-9_-]{11}$` — catches title-keyed records (J3).
+4. Every embedding record's `video_id` matches its filename.
+5. All on-disk vectors are 384-dim.
+6. **Per-video parity:** transcript chunks == embedding records == Qdrant points, individually for every video.
+7. Every mp3 has a metadata json — pre-empts the G2 fallback.
+8. Backlog reporting: videos awaiting transcription, embedding, or loading.
+9. No point id below 100000 — catches legacy counter-based orphans (J3a).
+10. Every point id reproduces from `make_point_id(video_id, chunk_index)`.
+11. Zero duplicate `(video_id, chunk_index)` pairs.
+12. `chunk_index` runs 0..n-1 contiguously per video.
+13. Duplicate text — **WARN, escalating above 200 characters.** Short repeats across videos are legitimate; see the note below.
+14. Payload schema uniform across all points, exactly the 7 expected keys.
+15. URLs are well-formed https with no whitespace; non-canonical shapes warn.
+16. All vectors 384-dim with no NaN or Inf, which would silently poison cosine similarity.
+
+Validated two ways: against all 1936 live points, and against **18 injected synthetic faults, every one caught, with no false positives on a clean baseline.**
+
+**Known benign warning:** the text `'I will find a light'` appears twice — `RlUu72JrOCQ` chunk 5 at 446.7s and `cHrH9CQ8pmY` chunk 8 at 710.8s. Two different videos, ~2 seconds each: Whisper transcribing background music. This is why check 13 is a warning rather than a failure.

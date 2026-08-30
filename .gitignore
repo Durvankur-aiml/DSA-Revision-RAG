@@ -1,7 +1,14 @@
 venv/
-data/audio/
-data/audio/_windows_temp/
-qdrant_db/
 __pycache__/
 *.pyc
 .env
+
+# Case-insensitive patterns on purpose. The folders on disk are capitalised
+# (Data/Audio) while these patterns used to be lowercase (data/audio) — they
+# only matched because Windows git sets core.ignorecase=true. On a
+# case-sensitive clone (Linux/CI/Docker) 4.3 GB of audio would have been
+# staged. [Dd] ranges make the match real instead of accidental, and keep
+# working whichever capitalisation the project settles on.
+[Dd]ata/[Aa]udio/
+[Dd]ata/[Aa]udio/_windows_temp/
+qdrant_db/
