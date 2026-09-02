@@ -4,6 +4,7 @@ import sys
 from qdrant_client import QdrantClient
 from sentence_transformers import SentenceTransformer
 from google import genai
+from google.genai import types
 
 
 # ==========================================
@@ -114,6 +115,38 @@ except Exception as e:
 
 
 # ==========================================
+# SYSTEM PROMPT (persona-grounded, Striver teaching style)
+# ==========================================
+
+SYSTEM_PROMPT = """\
+You are Striver — the DSA instructor from the A2Z DSA Course on YouTube. \
+Answer the student's question using ONLY the transcript context provided below.
+
+Adopt Striver's actual teaching style:
+- Address the student directly and conversationally ("so guys", "right?", "understood?")
+- Start directly with the explanation — go straight into the problem/concept, no video-intro 
+  greetings or preambles of any kind
+- Start with intuition or the brute-force approach, then build toward the optimal solution step by step
+- Use analogies and real-world comparisons to make abstract concepts click
+- Emphasize key points with repetition ("this is very important, very very important")
+- When explaining code or algorithms, walk through them step by step, narrating what happens at each stage
+- Keep the energy encouraging — DSA is hard, and the student is learning
+
+STRICTLY FORBIDDEN — never include any of these, even reworded:
+- "Hey everyone", "Welcome back", "So guys, welcome", or any video-opening greeting
+- References to "this video", "in this video", "let's dive into today's video", or the channel
+- Sign-offs like "see you in the next video" or "thanks for watching"
+This is a direct answer to a typed question, not a video script — begin immediately with 
+the actual explanation.
+
+GROUNDING RULES (non-negotiable):
+- Use ONLY the context provided in the user message to answer. Do not use outside knowledge.
+- If the context doesn't contain enough information, say so honestly: "This topic isn't covered 
+  in the sections I have right now, but check the full playlist — Striver probably covers it somewhere."
+- Never invent examples, complexities, or explanations not grounded in the provided transcript excerpts."""
+
+
+# ==========================================
 # CORE FUNCTIONS
 # ==========================================
 
@@ -147,6 +180,8 @@ def retrieve_chunks(question, top_k=TOP_K):
 
 
 def build_prompt(question, chunks):
+    """Builds the user message only. Persona/behavior instructions live in
+    SYSTEM_PROMPT and are passed separately via system_instruction."""
 
     if not chunks:
         return None
@@ -167,21 +202,15 @@ def build_prompt(question, chunks):
 
     context_text = "\n\n".join(context_blocks)
 
-    prompt = f"""You are a helpful teaching assistant answering questions about a DSA (Data Structures & Algorithms) course based on video transcripts.
-
-Use ONLY the context below to answer the question. If the context does not contain enough information to answer, say so clearly instead of guessing or using outside knowledge.
-
-Context:
+    user_message = f"""Context:
 {context_text}
 
-Question: {question}
+Question: {question}"""
 
-Answer clearly and concisely, as if explaining to a student."""
-
-    return prompt
+    return user_message
 
 
-def ask_gemini(prompt):
+def ask_gemini(user_message):
 
     last_error = None
 
@@ -190,7 +219,10 @@ def ask_gemini(prompt):
         try:
             response = genai_client.models.generate_content(
                 model=GEMINI_MODEL,
-                contents=prompt
+                contents=user_message,
+                config=types.GenerateContentConfig(
+                    system_instruction=SYSTEM_PROMPT,
+                ),
             )
         except Exception as e:
             last_error = e
@@ -291,14 +323,14 @@ def main():
                   "(nothing scored above the relevance threshold).\n")
             continue
 
-        prompt = build_prompt(question, chunks)
+        user_message = build_prompt(question, chunks)
 
-        if prompt is None:
+        if user_message is None:
             print("Retrieved chunks had no usable text. Skipping.\n")
             continue
 
         print("Generating answer...\n")
-        answer = ask_gemini(prompt)
+        answer = ask_gemini(user_message)
 
         if answer is None:
             print("Could not generate an answer due to a Gemini API error. "

@@ -1,0 +1,37 @@
+[
+    {
+        "start": 0.0,
+        "end": 84.76,
+        "text": "So, time to continue with our Grady algorithms playlist, before that, here we are come back to the channel, I hope you guys are doing extremely well. So, the problem that we will be solving today is lemonade change. So, you have a lemonade stand and every lemonade will cost you $5. The denominations in the market are $5, $10, $20. Now you are given n customers, you are given n customers. You start with zero, you don't have anything with you. You'll have to tell me, will you be able to sell n customers lemonade? What you are given in the array is what is the denomination that every customer comes of it. For an example, if a customer comes up with a 20 denomination node, the lemonade is costing you 5. So, you will have to return 15, you will have to return 15 to the customer right. Let us understand the question in a better way. So, initially you start off with 0 5 denominations, 0 10 denominations and 0 20 denominations right. The first customer comes up with a 5 denomination."
+    },
+    {
+        "start": 84.76,
+        "end": 173.48,
+        "text": "You are like ok you can take away the laminate and I will have 1 5 denomination with me. Perfect. I can sell 1 customer, sell to 1 customer for sure. I go to the next customer, it is again 5. I am like ok you take the laminate, go away. I will go to the next, I have a 5. So I am like ok I can still sell to this customer. customer. So I have three denominations of pride. The next customer comes up with a 10 denomination. I'm like, okay, coming up at 10, give that to me and take away one five because if you're giving 10, the lemonade cost you five. So you'll be taking away, taking back five. You'll give it back. Next I'll go to 20. Someone is coming up at 20. The lemonade will cost me five. So I'll get a 20, but I'll have to give him back 15. And one possible way is I'll give 110 and 15 because 10 plus five is 15, because 10 plus five is 15. So I can return 50 and that is it. And what I see is, yeah, this is possible. I can sell to all the possible customers that are coming to my lemonade stand. possible. Let's take one more example. What if I take this particular example? Again, let's start with zero denominations. So what I will do is I'll again start off with zero"
+    },
+    {
+        "start": 173.48,
+        "end": 257.44,
+        "text": "denominations. Let's start off with the first one. First customer comes up with a five denomination. I'm like, yes, I can sell it to you. The next customer comes up with a five. Yes, why not? I can sell it again to you. The next customer comes up with a 10. I'm like yes I can sell it to you because I can take that 10 and I can return you a 5. I can sell it to you. Next customer comes up with a 10 again. I'm like I can still sell it to you. How? I'll take that 10 and I'll return him a 5. The next customer is having 20. So when he comes up to me I'm like no I cannot sell it to you. Why? Because you're coming up with 20 I have two 10s but I don't have a zero. I need to return you 15. The only way I can return you 15 is 10 plus 5 or 5 plus 5 plus 5, I do not have either of them. So, I cannot sell to the last customer and if I cannot, I will be returning a false for this particular given array. For this particular given array, I will be returning a true. Very simple, isn't it? How do you solve this problem? You typically say okay, I'll be carrying a variable that keeps a track of 5, a variable"
+    },
+    {
+        "start": 257.44,
+        "end": 343.16,
+        "text": "that keeps a track of 10, a variable that keeps a track of 20. Anytime a customer comes up with a five denomination, I add it to this. Anytime a customer comes up with a 10 denomination, I add it to the 10 and I reduce from 5, I reduce from 5 right so with 5 what I will do is I will add it up with 10 what I will do is I will reduce 1 5 and I will add a 10 correct and if anyone comes up with a 20 there are two possible scenarios one is obviously I will keep the 20 along with that either either I give up a 10 or a 5. If I give up either a 10 or a 5 or I say I'm going to give up three fives, right? Either of this should be possible. That's it. That is what you'll have to write. If at any moment I'm not able to return to the customer, that means I cannot sell. I cannot sell. I break out and I will be returning a false. Can I write down the code? Probably yes, it's going to be super simple. Obviously a Boolean function. Again, I'll be writing down the pseudo code. You're given an array. What is the first thing that you start off with? You need three variables. One has a five, which is going to be zero. The other one is going to be 10, which is zero."
+    },
+    {
+        "start": 343.16,
+        "end": 427.32,
+        "text": "The other one, you can say it as 20, which is going to be zero. Remember one thing, there is no significance of 20 because you are not going to return 20 to anyone. So, maybe I don't need 20. What I return is either 5s or either 10 or 5s. Perfect. So, what I will do is I will start off with for i equal to 0 and I will go until n. If, if, if the array says I am a 5 that means perfect. You don't need to do anything 5 equal to 5 plus 1 that is as easy as it gets. What is the next thing? What if it's a 10? What if it's a 10? In that scenario, I'll be like, okay, if you are a 10, I should have I should have a minimum of one five. If I have a five, well in good, but if I don't have a 5 that's where the problem rises if I don't have a 5 I can straight away see return false stating not possible but if I have what I'll do is I will say 5 can you just take off one from you yeah I can and 10 can you just add a 1 to you perfect and"
+    },
+    {
+        "start": 427.32,
+        "end": 512.92,
+        "text": "the else goes now what is the else else is going to be very straightforward I'm getting a 20 right. So I'll have to return. So I can only return if I have a 10 and a five, I can return. And if I can return, it will be 10 equal to 10 minus one. And if I can return a five, it will be five minus one. Perfect. Or else I need five to be greater than equal to three in that scenario also I can return if it is not happening if it is not happening in that case I will have to return a false and there is no need to count it there is no need to count it because 20 is of no significance to me and if the entire fall loop is executed I can go ahead and return true super simple greedy algorithm where I say if someone is coming up with a 20, I do the basic minimal stuff. Give him the 10s and then give him the 5s. Simple. Instead of doing 3 times 5 first, you'll have to do this first because 5 is the smaller denomination. You keep it intact. 3D algorithm works fine. What is the time complexity? Obviously, we go off n. Nothing else, we go off n. That is the time complexity"
+    },
+    {
+        "start": 512.92,
+        "end": 530.2,
+        "text": "space using two variables so we go for one so yeah that will be it for this one so if you are still not watching and if you understood everything please do consider giving us a like and if you are new to our channel do consider subscribing to us as well with this I will be wrapping up this video let's experience about the video till then bye bye"
+    }
+]

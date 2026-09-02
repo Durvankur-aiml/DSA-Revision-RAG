@@ -1,0 +1,32 @@
+[
+    {
+        "start": 0.0,
+        "end": 88.92,
+        "text": "Hey everyone, welcome back to Take You Forward. Today we will be solving the problem minimum number of operations to convert a string 1 to string 2. So, what does the problem state? Now in operations, you basically allowed couple of operations. One is you can delete any character in string 1, delete anything in string 1 and insert anywhere, yes insert anywhere in string 1. And by doing that you have to convert a given string one to another string two and the number of operations can be many You have to tell me what is the minimum possible number of operations that you might end up taking Question is a answer or is an answer possible always Can you convert a string one to string two always? The answer to that is yes. How I can say it? Let's delete everything. That's four operations. It's an empty string that insert a and see so That's three another operation. So you've got the string s2 Delete everything and insert does every like every character of string two so seven operations is what you'll take So I can be like, okay, the max operations that I will be taking is I will have to delete"
+    },
+    {
+        "start": 88.92,
+        "end": 172.28,
+        "text": "so end deletions in the first string and m insertions which is exactly insert this stuff. So these are the maximum number of operations. So I have proved that this is possible. Now I need to figure out in what minimum possible way can I do this? So again, whenever something like removal insertion comes in, my brain starts thinking, what can I not touch? What can I not touch? Because ideally if I touch the minimal things, then the operations will be minimal. So like the first thing the intuition comes up is, what can I not touch? What can I not touch? Because if I touch the minimal items, the number of operations will automatically be minimal. But before that, let's see how can we actually convert an A, B, C, D to an A and C in the minimum number of operations. I can be like, okay, let's delete A, not not A, let's delete B and D. So if I delete B and D, we will have something like AC and now insert AN, insert N."
+    },
+    {
+        "start": 172.28,
+        "end": 262.04,
+        "text": "So I can be like I can have two deletions, I can have one insertion. So if I have two deletions, one insertion, I think I will be taking total of three operations and I can convert this given string to this particular given string. Okay, so how do you minimize the number of operations? So what is the intuition that is striking your head? It's like, what can I not touch? Because if I touch the minimal portions like over here if you see, we touched B and D and then we inserted N, we did not touch something like AC. Why did we do that? Let's understand. So what are the operations? It's like you can delete anyone. So anyone you can delete and there is something like you can insert anywhere you can insert again anywhere. So delete any anyone and insert anywhere actually gives you an idea that okay if I have A, B, C, D, A, B, C, D and A, N, C what is the common portion among them and my brain says the common portion among them is somewhere around I think AC if you carefully see AC AC is the"
+    },
+    {
+        "start": 262.04,
+        "end": 350.52,
+        "text": "longest common portion. So if I can keep this intact I'll keep this intact I'll try to do everything in between them I'll keep A and C intact and I'll try to do everything in between them. So, in order to make A, B, C, D into A, C what do I need to do? I will have to go across making two deletions which is deleting B and D and then again again if I want to make this can I say the number of guys left left is 1. So, you have to make an insertion so that you get that guy, okay, makes sense. So what is this? This is nothing but the longest matching among them and I know this is something which is known as longest common subsequence. Again, I've already taught this in the previous lectures. If you have not seen this, pause this video out, go back to my previous lectures, watch out longest common subsequence and you will get an idea about how to find this. So can I say the number of deletions is very simple. I can write the number of deletions to be whatever is the length of the string n minus the length of the LCS makes sense n minus the length of the LCS and the number of insertions will be either this is easy"
+    },
+    {
+        "start": 350.52,
+        "end": 438.6,
+        "text": "I need to convert this into something as str2. So can I say m minus the length of the LCS is what I need to insert those will be the insert operations. And can I say if I require the total number of operations, that's going to be n plus m minus two into length of LCS. Absolutely yes. And this is what my answer is, you already know how to find LCS, just need to copy paste the code. And if you copy paste the code, it becomes very, very, very simple. So without wasting any time, let's code this up. So you can see the code we have the lcs code. So we'll just copy paste this and go across to our problem. A given couple of strings that we need to convert. It's copies the lcs string. And I know the answer is very simple. It's going to be str dot size plus the other string pdr dot size minus two into the length of the lcs of str and ptr if I just write this yes if I just write this I've just taken the code from the lcs that we wrote it does run now guys just make sure you take the space optimized code there's no the space optimized one but yeah the main concept is you understand how to use lcs in order to solve this problem so guys just in case you did understand please please please make sure you like this video and if you are new to this channel please do consider subscribing and with this I will be wrapping up this video."
+    },
+    {
+        "start": 438.6,
+        "end": 440.6,
+        "text": "That's me in the next one. Till then, bye bye Tinkian."
+    }
+]

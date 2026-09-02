@@ -1,0 +1,37 @@
+[
+    {
+        "start": 0.0,
+        "end": 84.7,
+        "text": "Hey everyone, welcome back to Take You Forward. So in the previous video, we did solve the MCM problem using the MemoAsian technique. But we saw that it was partially accepted and that was because there was auxiliary stack space involved and we were using recursion. So in this video, we will be learning the tabulation method or the bottom up DP method for MCM. So what have I told for tabulation? What were the rules for tabulation if you remember from the previous lectures guys if you don't if you're not following this db playlist man You're missing a lot of things these follow from the first lecture then you'll understand the rules They follow the rules it becomes very simple. What were the rules? copy the base case Without even thinking anything just copy the base case So there was a dp of n cross n that we used so let's declare this what was the base case So, if you remember the code let us go back to the code. So, I will show you the code you remember what did the code say if i is equal to equal to j, if i is equal to equal to j which means whatever i is if it is 1 this has to be 1, if it is 2 this has to be 2, if it is 3 this has to be 3. So, for every similar set of i's that means for every similar set of single matrix matrix"
+    },
+    {
+        "start": 84.7,
+        "end": 172.62,
+        "text": "or matrices whatever you can call. For every similar because what does f of 1 1, what does f of 1 1 represents? Minimum cost to multiply matrix 1 to matrix 1 and that is 0. So, dp of i i equal to 0 that is what the base cases, minimum cost required to multiply the matrix with itself because you never multiply the matrix itself that is 0 done. Write down the changing parameters is what I say write down the changing parameters. So what were the changing parameters or changing states one was very simple I the other one was J other third step copy the regrets. Let's understand how will I go and how will J go. So where did we start I from? I can be like Strivo. We started I from 1 and we moved it ahead because if you remember the initial call was made to f of 1 comma n minus 1 remember over here. call where did I go? Yeah, initial call was made to this guy, if a 1 comma n minus 1."
+    },
+    {
+        "start": 172.62,
+        "end": 262.38,
+        "text": "So I know one thing, the I started from 1 and then it went on moving ahead. So what you can say is, okay, we do it opposite, n minus 1 till 0, n minus 1 till 0. Okay, perfect. So what is top down? Let's understand what is top down and what is bottom up in order to write the records? Top down means generally, generally bigger problem like over here the bigger problem was you took the entire set of data. Like if you remember the recursion tree, you took the entire set of data, then you broke it down into smaller problems so that's what top-down is top down is very simple bigger problem into smaller problem and generally the smaller problem is nothing but the base case that's the base case so bigger problem into smaller problem that's what top-down is or that's what generally recursion you write you try to break the bigger problem into smaller problem and then then then you go back and get the answer for bigger problem. What is bottom up? That is very that is something which you need to understand bottom up is the opposite."
+    },
+    {
+        "start": 262.38,
+        "end": 349.12,
+        "text": "You take the smaller problem, yes you take the smaller problem and then build up build up build up to get the bigger one get the bigger one. So what is the bigger one over here? What is the bigger one? So I can say the bigger one is nothing but looking for a large set of matrices to be multiplied, looking for a large set of matrices to be multiplied. So if i is, where is the tabulation? I got lost. So if i is n-1 to 0 because that's very obvious because... go from the bottom only. So if i is n minus 1 to 0, what about j? You can be like Stravel, one thing I know for sure that j is starting from where the j running, how did you call the function n minus 1. So ideally j is running from n minus 1 till 0. So apparently you would have done the opposite? Okay, let's write down the opposite, which is 0 to n minus 1. But does that make sense? And the answer to that is no. Why? Because we know one thing, i is something which will always be on the left of j, i is something which is always be on"
+    },
+    {
+        "start": 349.12,
+        "end": 431.36,
+        "text": "the left of j. So how can you always start j from 0? So can I see, can I see this is where I need to be a bit practical not to start from the right of y instead of going till zero to n minus one. So yes, written both the loops. Just make sure this is i plus one because there has to be some set of data. They cannot go to the left written. Next step is copy the reference and you will be done with the tabulation as simple as it can get if you have written the recursive solution. So what I'll do is I will just go back to the code and this is how the code looks. So let's quickly change this to probably dp of nn. Okay, for the next thing I said for int i will go n minus 1 till i greater than 1 rather y not 0 because if you remember i was from n minus 1 till 1 and not 0 that's what you do and j can go from i plus one till j lesser than n and j plus this other next thing just make sure you copy paste the entire records yeah that's what you just need to do copy paste the entire records as done and instead of f just make sure instead of rather f you"
+    },
+    {
+        "start": 431.36,
+        "end": 515.64,
+        "text": "You copy something like dp i k perfect and over here you just have dp k plus 1 j. Once you have done this, this is what you write and over here you return dp of 1 n minus 1 and you just format this off. what you will generally return. Okay, the base case, I forgot to write the base case. So it's i equal to one till i lesser than n i plus plus, and against the db of i i equal to zero. I think that should be pretty much it. Yeah, it's like this is this is what the code will be. So we're going to run this. I'm getting all the correct answer. I'm going to submit this this time probably we will not get partially accepted. This will be completely accepted it is it is it's two o'clock in the night cool guys are easy isn't it once you write this is just the opposite popping recurrence and understanding the base case is getting the opposite of ij leg whatever you're running the ij and recursion is just the opposite that you need to do I just need to be a bit practical while you write just think about edge cases because if you have to run run this from zero then then there's a problem right so just make"
+    },
+    {
+        "start": 515.64,
+        "end": 547.64,
+        "text": "sure you be a bit practical when you try to write the for loops and if you are then you can easily solve this. Also time complexity n cube space n square noxiliary space being used. So guys I hope you have understood the tabulation once just in case you did please please please make sure you like this video and if you are new to this channel please do consider subscribing to us and yeah with this let's wrap up this video and meet in the next one. Bye bye. I will find a light in you"
+    }
+]

@@ -1,0 +1,37 @@
+[
+    {
+        "start": 0.0,
+        "end": 86.08,
+        "text": "So let's continue with the math section of Straybus A2Z DSA course before that. Here we have the math of the channel. I hope you guys are doing extremely well. So the problem that we will be solving today is printing devices of a number. So what is the problem exactly stating? It's stating that you'll be given n equal to 36 and you'll have to return me all the divisors of this particular number. Order doesn't matter. If you have to write down all the divisors, one is definitely a divisor. Two is, yes, two is a divisor. Three is a divisor. Is four a divisor? Yes. Is five a divisor? No. Is six one? Yes. Is seven, eight, nine? Yes, nine is one. Ten, eleven, twelve, twelve is one. Thirteen, fourteen, fifteen, sixteen, eighteen is one. And thirty-six. I hope I haven't missed out anything. Yeah. So these are the divisors. And this is what you have to return. Again, the order doesn't matter as long as you return me all the devices I'm okay with it. Got it. So how do I? Trin down all the devices that is an important question First of all, the extreme name solution is okay. I know one thing the devices Can lie between one to one? You know going to like 37 cannot be a divisor. It's definitely going to be between"
+    },
+    {
+        "start": 86.08,
+        "end": 173.6,
+        "text": "1 to n correct so the first thing that I will do is I'll start off a for loop from 1 till n okay I'll say okay hey listen if n is getting because divisor means it should be divisible so if the remainder is 0 when I divide by i that means it is divisible it is divisible right? Hence, I can probably keep an array or a list to whatever you can according to your language. As a array.add, I, so I have the divisor I with me done, but what will be the time complexity? So the time complexity of this particular approach will be big of n and what will be the space complexity? Now I'm not using any space, the space that is being used is for returning the answer. So typically I am not using any space for solving it. Whatever space I am using it is for storing the devices and returning it. Again the space complexity will be depending on the integer n so you cannot pinpoint. So you can tell the interview that if n is 1 I will be requiring a big of 1 space, if n is 2 I will be requiring a big of 2 space. So depending on the number the space complexity will vary and that is only required for storing the answer got it but obviously the interviewer will not be happy with the time complexity and I'll ask you to optimize it now this is where"
+    },
+    {
+        "start": 174.64,
+        "end": 264.16,
+        "text": "the optimization will come in and you'll have to observe minutely so what do you need to observe first of all let's observe something if one is dividing 36 if one is dividing 36 one should be multiplying by something to get 36 and that is 36. So if one is a divisor, the number that it is getting multiplied to is another divisor. Agreed? Okay? If two is a divisor, it's definitely getting multiplied with something that is all, that's how it gets 36. So if two is a divisor, the number that it is getting multiplied to will be another divisor. Okay? So can I say if I can figure out 1, I can also figure out 36. If I can figure out 2, I can also figure out 18. If I can figure out 3, 3 into what? 12. If I can figure out 4, I can figure out 9 as well. And if I can figure out 6, 6 into 6 will be 36. So typically I don't need to loop till 36. If I can loop till 6 for this particular example and what is 6? 6 into 6 kind of square root of 36 square root of 36. So if I can loop till square root of 36, I can get the other side divisor as well."
+    },
+    {
+        "start": 264.16,
+        "end": 351.64,
+        "text": "I can get the other side divisor as well. You see this pattern you do see right. So what I will try to do is I will say hey listen. I know one thing for sure, 1 into 36 is 36, 2 into 18 is 36, 3 into 12 is 36, 4 into 9 is 36, 6 into 6 is 36. Now these are the devices, 1, 2, 3, 4, 6 and next, the device is 9, 9 into 4 is 36 and then 12 into 3 is 36 18 into 2 is 36 and 36 into 1 is 36 So what I was doing was I was looping from 1 to 36 But actually I don't for finding 9 12 18 36 I don't need to loop in the second half if I can just loop till 6 My job will be done because for one I'll get 36 before I'll get 9 I don't need to explicitly do for 9. So what I'll say is, hey listen, I'll start the looping from 1, but I'll do it just till square root of n. That is what I'll do. And I'll say"
+    },
+    {
+        "start": 351.64,
+        "end": 440.52,
+        "text": "Array is empty or list is empty. So if my n modulo i is equal to equal to zero, I am very sure that i is a divisor. I'm very sure about that, great. So I can say array.add i. Okay, what is the other divisor? The other divisor is definitely n by i. You have a doubt this. If 12 is a divisor, 36 by 12 is three. He is the other divisor. If 3 is a divisor, 36 by 3 is 12, 12 is the other divisor. Right? But you have an edge case. You'll have to think about the edge case. If 6 is a divisor, 36 by 6 is also 6. So you'll have 6 twice. You need the unique divisors. 6 is just once in the answer. So please make sure if n by i, which is the other divisor, If that's not equal to i, then only i'll add it to the array. Perfect. If completes, for loop completes. I am done. Again the order will not be in the sorted fashion. It will be 1, then 36, then 2, then 18, then 3, then 12, then 4, then 9 and then 6. This is how the order will be if you follow this method. But if you follow this method, the time complexity will be coming out to be b go of square root"
+    },
+    {
+        "start": 440.52,
+        "end": 527.8,
+        "text": "of n. This is what the time complexity will be. Again, the space complexity is something which you will be wearing according to the numbers so you cannot pinpoint the space complexity. I am not using space complexity to solve the problem. I am using space complexity to return the answer because the problem statement demands it so I cannot optimize that. Got it? Okay. I just wanted to say if you're writing i equal to 1, i lesser than equal to square root of n that's one way of writing the loop if you're looping till square root while the other way is you can start from i equal to 1 and you can say i into i lesser than equal to n i plus plus this will also work out quite simple 6 into 6 lesser than equal to 36 works out 7 into 7 lesser than equal to 36 no So this is a better way. Why? Because square root is a C++ or STL function in C++ in Java it's a collections inside the collections because square root is a library function which ends up taking some time complexity. So avoid it instead of it. Write it like this quite simple, right? Just a multiplication and this is a better way to write. Got it? Okay, perfect. This is how I can code it and yeah, this will be it for this one."
+    },
+    {
+        "start": 527.8,
+        "end": 547.64,
+        "text": "So if you're still now watching, I hope you've understood everything and if that is the case, please, please do consider giving us a like and if you're new to our channel, do consider subscribing to us as well. With this, I'll be wrapping up this video. Let's read some of the video till the end of my day. You're golden"
+    }
+]
