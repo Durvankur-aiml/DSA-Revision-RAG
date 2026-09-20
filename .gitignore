@@ -18,5 +18,12 @@ qdrant_db/
 ask_response*.json
 ask_bst.json
 
+# Frontend build artifacts & dependencies
+node_modules/
+dist/
+.env
+.env.local
+*.local
+
 # Tooling state
 .freebuff/
