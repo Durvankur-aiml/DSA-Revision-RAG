@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from ask import (
@@ -18,6 +19,32 @@ app = FastAPI(
     title="Mission Anthropic API",
     description="AI DSA Tutor powered by Striver A2Z RAG",
     version="1.0.0",
+)
+
+
+# ------------------------------------------------------------
+# CORS — development only
+# ------------------------------------------------------------
+
+# The React/Vite dev server runs on a different origin from this API.
+# Vite's default port is 5173 (the frontend is built in Phase 4; no
+# vite.config exists yet, so the default is the discovered convention,
+# see Frontend/src/lib/api.js which targets http://localhost:8000).
+# Restricted to loopback origins on purpose — widen only with a
+# concrete deployment reason, never to "*".
+CORS_DEV_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=CORS_DEV_ORIGINS,
+    allow_credentials=False,  # no cookies/auth in this API
+    allow_methods=["GET", "POST"],  # only what the API exposes
+    allow_headers=["Content-Type"],
 )
 
 

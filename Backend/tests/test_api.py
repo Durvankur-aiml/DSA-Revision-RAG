@@ -149,6 +149,55 @@ class TestLLMFailure:
         assert response.json()["answer"] == expected
 
 
+    def test_malformed_json_body_is_clean_422(self, client):
+        """TC-5: invalid JSON must produce a clean 4xx, no stack trace,
+        and no Gemini call."""
+        response = client.post(
+            "/ask",
+            content=b"{not valid json",
+            headers={"Content-Type": "application/json"},
+        )
+        assert response.status_code == 422
+        assert "Traceback" not in response.text
+
+    def test_wrong_json_type_is_422(self, client):
+        response = client.post("/ask", json=["question"])
+        assert response.status_code == 422
+
+
+class TestContractStability:
+    """Pins the exact response shape Phase 4's frontend will consume,
+
+    so any accidental field rename breaks the suite here first.
+    """
+
+    def test_delivery_model_is_single_json_object(self, client):
+        """The backend returns ONE JSON object (not NDJSON/streaming).
+        Phase 4's frontend must read `response.json()`, not a stream.
+        """
+        response = client.post(
+            "/ask", json={"question": "What is binary search?"}
+        )
+        assert response.headers["content-type"].startswith(
+            "application/json"
+        )
+        body = response.json()  # a single parseable object
+        assert isinstance(body, dict)
+
+    def test_source_fields_for_frontend_cards(self, client):
+        response = client.post(
+            "/ask", json={"question": "What is binary search?"}
+        )
+        source = response.json()["sources"][0]
+
+        # Frontend SourceCard needs these exact names and types:
+        assert isinstance(source["title"], str) and len(source["title"]) > 0
+        assert isinstance(source["timestamp"], int)  # seconds
+        assert source["url"].startswith("https://")
+        assert "t=" in source["url"]  # deep link to the timestamp
+        assert 0.0 <= source["score"] <= 1.0
+
+
 # ---------------------------------------------------------------------------
 # Health endpoints
 # ---------------------------------------------------------------------------
