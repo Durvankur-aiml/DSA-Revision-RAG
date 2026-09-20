@@ -12,3 +12,11 @@ __pycache__/
 [Dd]ata/[Aa]udio/
 [Dd]ata/[Aa]udio/_windows_temp/
 qdrant_db/
+
+# Runtime artifacts (server logs, ad-hoc API response dumps)
+*.log
+ask_response*.json
+ask_bst.json
+
+# Tooling state
+.freebuff/
