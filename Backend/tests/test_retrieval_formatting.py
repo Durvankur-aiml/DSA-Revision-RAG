@@ -128,8 +128,9 @@ class TestTimestampUrls:
                 "start": 86.0,
             }
 
-        with ask.RETRIEVAL_SCORE_LOCK:
-            ask.LAST_RETRIEVAL_SCORES["BS1VIDEO"] = 1.0
+        # Same contract as the live API: scores live per-request in a
+        # ContextVar, retrieved via the production get_retrieval_score().
+        ask._set_retrieval_scores({"BS1VIDEO": 1.0})
 
         formatted = ask.format_sources([_Hit()])
         assert f"{url_with_query}&t=86" in formatted

@@ -300,8 +300,8 @@ def retrieval_mock(monkeypatch, main_module):
 
     Patches both ask.py and main.py namespaces (main imports by value).
     Mirrors production score bookkeeping: the real retrieve_chunks
-    stores each selected chunk's hybrid score in LAST_RETRIEVAL_SCORES,
-    which the /ask handler reads when building sources.
+    streams each selected chunk's hybrid score into the per-request
+    ContextVar, which the /ask handler reads when building sources.
     """
     calls = []
     chunks = _sample_chunks()
@@ -309,10 +309,13 @@ def retrieval_mock(monkeypatch, main_module):
     def _fake_retrieve(question, top_k=ask.TOP_K):
         calls.append(question)
         selected = list(chunks[:top_k])
-        with ask.RETRIEVAL_SCORE_LOCK:
-            ask.LAST_RETRIEVAL_SCORES.clear()
-            for hit in selected:
-                ask.LAST_RETRIEVAL_SCORES[str(hit.id)] = float(hit.score)
+        # Mirror production: retrieve_chunks streams each selected chunk's
+        # hybrid score through the same per-request ContextVar API, so the
+        # test merges into the existing var instead of overwriting it.
+        for hit in selected:
+            ask._set_retrieval_scores(
+                {**ask._retrieval_scores_var.get(), str(hit.id): float(hit.score)}
+            )
         return selected
 
     monkeypatch.setattr(ask, "retrieve_chunks", _fake_retrieve)

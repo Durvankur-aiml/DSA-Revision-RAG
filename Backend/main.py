@@ -197,13 +197,11 @@ def ask(request: AskRequest):
         else:
             timestamp_url = ""
 
-        # Get hybrid score
-        from ask import LAST_RETRIEVAL_SCORES
+        # Request-local hybrid score (ContextVar in ask.py — never shared
+        # across concurrent FastAPI tasks).
+        from ask import get_retrieval_score
 
-        score = LAST_RETRIEVAL_SCORES.get(
-            str(hit.id),
-            0.0,
-        )
+        score = get_retrieval_score(hit.id)
 
         sources.append(
             Source(

@@ -3,7 +3,7 @@ import re
 import sys
 import time
 import random
-import threading
+import contextvars
 
 from qdrant_client import QdrantClient
 from sentence_transformers import SentenceTransformer
@@ -103,9 +103,22 @@ GEMINI_MAX_RETRIES = 3
 GEMINI_RETRY_BASE_SECONDS = 2.0
 GEMINI_RETRY_MAX_SECONDS = 20.0
 
-# Protects the in-process retrieval-score snapshot when FastAPI handles
-# multiple requests concurrently.
-RETRIEVAL_SCORE_LOCK = threading.Lock()
+# ============================================================
+# REQUEST-LOCAL RETRIEVAL SCORE STORAGE
+# ============================================================
+
+# Per-request retrieval scores, keyed by Qdrant point ID.
+# A ContextVar keeps concurrent FastAPI requests isolated: each
+# request reads only the scores produced by its own retrieve_chunks
+# call. There is no module-level mutable global and no lock.
+_retrieval_scores_var = contextvars.ContextVar(
+    "retrieval_scores", default={}
+)
+
+
+def _set_retrieval_scores(scores):
+    """Atomically replace this request's retrieval-score snapshot."""
+    _retrieval_scores_var.set(dict(scores))
 
 
 # ------------------------------------------------------------
@@ -113,13 +126,6 @@ RETRIEVAL_SCORE_LOCK = threading.Lock()
 # ------------------------------------------------------------
 
 MAX_QUESTION_LENGTH = 500
-
-
-# ============================================================
-# RUNTIME RETRIEVAL SCORE STORAGE
-# ============================================================
-
-LAST_RETRIEVAL_SCORES = {}
 
 
 # ============================================================
@@ -1076,10 +1082,9 @@ def retrieve_chunks(
     top_k=TOP_K
 ):
 
-    global LAST_RETRIEVAL_SCORES
-
-    with RETRIEVAL_SCORE_LOCK:
-        LAST_RETRIEVAL_SCORES = {}
+    # Score storage for this request starts empty; STEP 10 fills it
+    # via the request-local ContextVar (see _set_retrieval_scores).
+    _set_retrieval_scores({})
 
     # ========================================================
     # STEP 1 — Extract topic
@@ -1465,11 +1470,9 @@ def retrieve_chunks(
             item["hit"].id
         )
 
-        LAST_RETRIEVAL_SCORES[
-            point_id
-        ] = item[
-            "hybrid_score"
-        ]
+        _set_retrieval_scores(
+            {**_retrieval_scores_var.get(), point_id: item["hybrid_score"]}
+        )
 
     # ========================================================
     # STEP 11 — Debug output
@@ -1493,13 +1496,8 @@ def retrieve_chunks(
                 "Unknown"
             )
 
-            point_id = str(
-                hit.id
-            )
-
-            score = LAST_RETRIEVAL_SCORES.get(
-                point_id,
-                0.0
+            score = get_retrieval_score(
+                str(hit.id)
             )
 
             print(
@@ -1514,9 +1512,12 @@ def retrieve_chunks(
 
 
 def get_retrieval_score(point_id):
-    """Return a retrieval score without exposing mutable global state."""
-    with RETRIEVAL_SCORE_LOCK:
-        return float(LAST_RETRIEVAL_SCORES.get(str(point_id), 0.0))
+    """Return a retrieval score for the current request only.
+
+    Request-local storage (ContextVar), so two concurrent FastAPI
+    tasks never overwrite each other's scores.
+    """
+    return float(_retrieval_scores_var.get().get(str(point_id), 0.0))
 
 
 # ============================================================
@@ -2111,7 +2112,10 @@ def format_sources(
             hit.id
         )
 
-        score = get_retrieval_score(point_id)
+        if url:
+            score = get_retrieval_score(point_id)
+        else:
+            score = 0.0
 
         lines.append(
             f"  [{i}] {title} — {start}s\n"
