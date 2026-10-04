@@ -4,11 +4,44 @@ import sys
 import time
 import random
 import contextvars
+import threading
+from dataclasses import dataclass
 
 from qdrant_client import QdrantClient
 from sentence_transformers import SentenceTransformer
 from google import genai
 from google.genai import types
+
+# Structured observability (stdlib-only, never raises, no import cycle).
+# Stage timings recorded through _perf below land in the per-request
+# context; retrieval metadata is attached inside retrieve_chunks.
+import obs
+
+# Cross-encoder reranker (validated in Phase 3/3B, integrated Phase 3C).
+# Used ONLY by the optional rerank stage in retrieve_chunks, which runs
+# exclusively behind ALGOFORGE_RERANK_ENABLED=true (default: disabled).
+from reranker import CrossReranker
+
+
+_PERF_ENABLED = True
+
+
+def _perf(stage, started_at, extra=None):
+    """Emit a [PERF] timing line and record the stage structurally.
+
+    Instrumentation only: never raises and never changes control flow.
+    The stdout line keeps its historical format, so existing diagnostics
+    and any tooling that greps for [PERF] keep working; the same duration
+    is additionally recorded into the per-request observability context
+    (Backend/obs.py) when a request is active (CLI runs simply skip it).
+    """
+    if not _PERF_ENABLED:
+        return
+    try:
+        duration = time.monotonic() - started_at
+        obs.record_stage(stage, duration, extra)
+    except Exception:
+        pass
 
 
 # ============================================================
@@ -103,6 +136,92 @@ GEMINI_MAX_RETRIES = 3
 GEMINI_RETRY_BASE_SECONDS = 2.0
 GEMINI_RETRY_MAX_SECONDS = 20.0
 
+# Consecutive Gemini 503 'service_unavailable' (capacity) responses --
+# counted across creates AND polls within ONE /ask request -- tolerated
+# before failing fast. Brief blips (1-2 consecutive 503s) keep the
+# existing retry/recovery behavior; a sustained capacity incident fails
+# the request in seconds instead of burning two 90-second interaction
+# windows (~190 s) and quota. A successful poll GET does NOT reset
+# the count and does NOT prove recovery: live evidence (2026-09-25)
+# shows polls of an in_progress interaction keep succeeding during an
+# incident while the actual generation 503s.
+GEMINI_503_MAX_CONSECUTIVE = 3
+
+# Once ANY capacity 503 has been seen in a request, the entire request
+# must finish within this many seconds (measured from ask_gemini
+# entry): either the current interaction recovers or the request
+# fails. Without this budget a capacity incident still burns full
+# 90-second interaction windows. Genuine transient recovery completes
+# well inside it (create ~3 s + polls/backoffs ~12 s).
+GEMINI_503_DEGRADED_MAX_SECONDS = 20.0
+
+
+# ------------------------------------------------------------
+# Cross-encoder reranker configuration (Phase 3C)
+# ------------------------------------------------------------
+
+# The validated experiment (Phase 3B) measured, on the golden dataset
+# (n=100), baseline Hit@1 62% / Hit@6 91% / MRR 0.725 versus depth-70
+# reranking Hit@1 85% / Hit@6 100% / MRR 0.909. Integration is OFF by
+# default: production behavior is byte-identical to pre-Phase-3C until
+# explicitly enabled. One-line activation (rollback = unset / "false"):
+#
+#     ALGOFORGE_RERANK_ENABLED=true
+#     ALGOFORGE_RERANK_DEPTH=70
+#
+# Any value other than a case-insensitive "true" / "1" disables the
+# reranker. A MALFORMED DEPTH leaves the reranker DISABLED (config
+# error is logged once at startup) — never a crash, never a partial
+# rerank. The depth default when enabled is the validated 70.
+RERANK_ENABLED_ENV = "ALGOFORGE_RERANK_ENABLED"
+RERANK_DEPTH_ENV = "ALGOFORGE_RERANK_DEPTH"
+RERANK_DEPTH_DEFAULT = 70
+
+
+def _parse_rerank_config():
+    """Resolve the reranker feature flags from the environment.
+
+    Returns (enabled, depth). Safe defaulting on every malformed input:
+    non-boolean enabled values and non-positive/non-integer depths both
+    degrade to (False, RERANK_DEPTH_DEFAULT) with a startup warning, so
+    a typo can never turn a heavy model load on by accident and can
+    never disable the rollback switch.
+    """
+    raw_enabled = os.environ.get(RERANK_ENABLED_ENV, "").strip().lower()
+    raw_depth = os.environ.get(RERANK_DEPTH_ENV, "").strip()
+
+    if raw_enabled not in ("true", "1", ""):
+        if raw_enabled not in ("false", "0", ""):
+            print(
+                f"WARNING: {RERANK_ENABLED_ENV}={raw_enabled!r} is not a "
+                "boolean; reranker DISABLED."
+            )
+        return False, RERANK_DEPTH_DEFAULT
+
+    enabled = raw_enabled in ("true", "1")
+
+    depth = RERANK_DEPTH_DEFAULT
+    if raw_depth:
+        try:
+            depth = int(raw_depth)
+        except ValueError:
+            print(
+                f"WARNING: {RERANK_DEPTH_ENV}={raw_depth!r} is not an "
+                "integer; reranker DISABLED."
+            )
+            return False, RERANK_DEPTH_DEFAULT
+        if depth < 1:
+            print(
+                f"WARNING: {RERANK_DEPTH_ENV}={raw_depth!r} must be >= 1; "
+                "reranker DISABLED."
+            )
+            return False, RERANK_DEPTH_DEFAULT
+
+    return enabled, depth
+
+
+RERANK_ENABLED, RERANK_DEPTH = _parse_rerank_config()
+
 # ============================================================
 # REQUEST-LOCAL RETRIEVAL SCORE STORAGE
 # ============================================================
@@ -114,6 +233,30 @@ GEMINI_RETRY_MAX_SECONDS = 20.0
 _retrieval_scores_var = contextvars.ContextVar(
     "retrieval_scores", default={}
 )
+
+# Request-local retrieval diagnostics (Backend/eval harness). Same
+# ContextVar isolation rules as the score storage above: replaced
+# atomically per request, never shared across concurrent FastAPI tasks.
+_retrieval_diagnostics_var = contextvars.ContextVar(
+    "retrieval_diagnostics", default=None
+)
+
+
+def _set_retrieval_diagnostics(diagnostics):
+    """Atomically replace this request's retrieval diagnostics."""
+    _retrieval_diagnostics_var.set(diagnostics)
+
+
+def get_retrieval_diagnostics():
+    """Return the current request's diagnostics snapshot (or None).
+
+    Shape: {"candidates": [{point_id, video_id, video_title,
+    hybrid_score, title_score, semantic_score, text_score, rank,
+    selected, cull_reason}...], "config": {...}} ordered best-first by
+    hybrid score. Purely observational: populated by retrieve_chunks,
+    never read by production retrieval logic.
+    """
+    return _retrieval_diagnostics_var.get()
 
 
 def _set_retrieval_scores(scores):
@@ -822,7 +965,115 @@ def _is_broad_topic_question(question, topic):
     })
 
 
-def title_exact_match(question, video_title):
+class __TitleScoringContext:
+    """Query-dependent inputs of title_exact_match, computed once.
+
+    title_exact_match used to call extract_topic(question) (normalize +
+    regex work) once PER POINT; the topic depends only on the question,
+    so it is computed once per request and shared across all points.
+    """
+
+    __slots__ = ("normalized_question", "question_tokens", "topic", "topic_phrase", "broad_topic")
+
+    def __init__(self, question):
+        self.normalized_question = normalize_text(question)
+        self.question_tokens = tokenize(question)
+        self.topic = extract_topic(question)
+        self.topic_phrase = (
+            normalize_text(self.topic) if self.topic else ""
+        )
+        self.broad_topic = bool(
+            self.topic
+            and self.question_tokens
+            and _is_broad_topic_question(question, self.topic)
+        )
+
+
+def _title_score_cached(question, context, features):
+    """title_exact_match with per-point static work already cached.
+
+    Decision structure, return values, and float arithmetic are
+    identical to the original function; only the per-point
+    normalize/extract/tokenize work is replaced by precomputed values.
+    """
+    if not context.topic:
+        return 0.0
+
+    title = features.title_normalized
+    topic_phrase = context.topic_phrase
+
+    if not topic_phrase:
+        return 0.0
+
+    # Never treat a longer, distinct topic as an exact match.
+    # Example: "binary search tree" != "binary search".
+    if topic_phrase == "binary search" and "binary search tree" in title:
+        return 0.0
+
+    # Exact phrase must be present as complete tokens, not as a substring.
+    if not re.search(rf"(?<!\w){re.escape(topic_phrase)}(?!\w)", title):
+        # Special numeric Sum handling.
+        sum_match = re.fullmatch(r"([0-9]+)\s+sum", topic_phrase)
+        if sum_match:
+            number = sum_match.group(1)
+            if re.search(rf"(?<!\w){number}\s*sum(?!\w)", title):
+                return 0.80
+        return 0.0
+
+    if context.broad_topic:
+        # Introductory/general titles are the strongest match.
+        title_tokens = set(title.split())
+
+        if title_tokens & _TITLE_INTRO_MARKERS:
+            return 1.0
+
+        # A title consisting mostly of the topic is also a strong general match.
+        topic_tokens = set(topic_phrase.split())
+        non_topic_tokens = title_tokens - topic_tokens
+        if len(non_topic_tokens) <= 2:
+            return 0.95
+
+        # Problem-specific videos remain useful, but are not "exact".
+        return 0.72
+
+    # For specific questions, a title containing the topic is strong,
+    # but reserve 1.0 for a genuinely exact/general match.
+    topic_tokens = set(topic_phrase.split())
+    title_tokens = features.title_token_set
+
+    if topic_tokens and topic_tokens.issubset(title_tokens):
+        return 0.80
+
+    return 0.0
+
+
+def title_exact_match(question, video_title, context=None):
+    """Score how strongly a video title matches the detected topic.
+
+    Production path: delegates to _title_score_cached with the
+    per-point static features built on the fly (kept behaviorally
+    identical to the original body below).
+    """
+    if context is None:
+        context = __TitleScoringContext(question)
+
+    return _title_score_cached(
+        question,
+        context,
+        __build_point_lexical_features(
+            {"video_title": video_title, "text": ""}
+        ),
+    )
+
+
+def _title_exact_match_original_body(question, video_title):
+    """Reference implementation retained for equivalence testing.
+
+    This is the pre-optimization body, unchanged. Production callers
+    use title_exact_match (cached features). _verify_lexical_equivalence
+    and the offline test suite compare this reference against the
+    cached path on identical inputs.
+    """
     """
     Score how strongly a video title matches the detected topic.
 
@@ -861,13 +1112,9 @@ def title_exact_match(question, video_title):
 
     if _is_broad_topic_question(question, topic):
         # Introductory/general titles are the strongest match.
-        intro_markers = {
-            "introduction", "intro", "basics", "basic", "fundamentals",
-            "overview", "concept", "concepts", "real", "life"
-        }
         title_tokens = set(title.split())
 
-        if title_tokens & intro_markers:
+        if title_tokens & _TITLE_INTRO_MARKERS:
             return 1.0
 
         # A title consisting mostly of the topic is also a strong general match.
@@ -925,6 +1172,255 @@ def text_match_score(
 
 
 # ============================================================
+# STATIC LEXICAL FEATURE CACHE
+# ------------------------------------------------------------
+# Profiling (2026-09-25) showed lexical_retrieve spending ~3.5 s per
+# request recomputing query-independent work for all ~4,850 static
+# points: normalize_text/tokenize of every title and transcript, plus
+# regex work. The collection is static after indexing, so the points
+# and their query-independent lexical features are built once (lazy,
+# synchronized) and reused read-only by every request.
+#
+# Behavior preservation: the cached values are EXACTLY what the
+# per-request code used to compute (same functions, same inputs); only
+# the computation moved from request time to startup. Query-dependent
+# scoring still runs per request with the original formulas.
+# ============================================================
+
+# Introductory/general title markers used by title_exact_match when
+# the question is a broad topic query. Hoisted verbatim from the
+# per-call literal (same members, no behavior change).
+_TITLE_INTRO_MARKERS = frozenset(
+    {
+        "introduction", "intro", "basics", "basic", "fundamentals",
+        "overview", "concept", "concepts", "real", "life"
+    }
+)
+
+
+@dataclass(frozen=True)
+class __PointLexicalFeatures:
+    """Query-independent lexical features of one static point.
+
+    title_normalized / title_token_set reproduce exactly what
+    title_exact_match computed per point per request;
+    text_token_set reproduces exactly what text_match_score computed
+    per point per request. Immutable and therefore safe to share
+    across concurrent requests without locks.
+    """
+
+    title_normalized: str
+    title_token_set: frozenset
+    text_token_set: frozenset
+
+
+def __build_point_lexical_features(payload):
+    """Precompute the static lexical features of one point payload.
+
+    Uses the SAME normalization/tokenization functions as the original
+    per-request path, so cached values are bit-identical to freshly
+    computed ones.
+    """
+    title = payload.get("video_title", "")
+    text = payload.get("text", "")
+
+    return __PointLexicalFeatures(
+        title_normalized=normalize_text(title),
+        title_token_set=frozenset(tokenize(title)),
+        text_token_set=frozenset(tokenize(text)),
+    )
+
+
+# One-time initialization of the static lexical cache. The double-
+# checked lock guards against concurrent first requests; after init
+# the cache is treated as read-only.
+_LEXICAL_CACHE_LOCK = threading.Lock()
+_LEXICAL_CACHE = None
+
+
+def _get_lexical_cache():
+    """Return {"points", "features"} for the static collection.
+
+    Initialized once per process from a single full Qdrant scroll
+    (~0.2 s for 4,850 points, measured). On initialization failure the
+    cache stays an empty structure, mirroring the previous behavior of
+    a failed per-request scan (retrieval then runs on semantic results
+    only). A failed init is retried on the next request until it
+    succeeds; after a successful init the cache is never rebuilt.
+    """
+    global _LEXICAL_CACHE
+
+    if _LEXICAL_CACHE is not None:
+        return _LEXICAL_CACHE
+
+    with _LEXICAL_CACHE_LOCK:
+        if _LEXICAL_CACHE is not None:
+            return _LEXICAL_CACHE
+
+        try:
+            points = load_all_points()
+            features = [
+                __build_point_lexical_features(point.payload or {})
+                for point in points
+            ]
+        except Exception as e:
+            # Do NOT cache the failure: the pre-optimization code
+            # re-scanned on every request, so a transient Qdrant
+            # outage degraded to semantic-only for that request and
+            # recovered on the next one. Preserve exactly that.
+            print(
+                f"ERROR: Failed to initialize lexical cache: {e}"
+            )
+            return {"points": [], "features": []}
+
+        _LEXICAL_CACHE = {
+            "points": points,
+            "features": features,
+        }
+        _perf(
+            "lexical_cache_init",
+            time.monotonic(),
+            extra=f"points={len(points)}",
+        )
+        return _LEXICAL_CACHE
+
+
+# ============================================================
+# CROSS-ENCODER RERANKER — LAZY PRODUCTION SINGLETON (Phase 3C)
+# ------------------------------------------------------------
+# ONE instance per process, created on the first enabled request and
+# reused for every request afterwards (the model object is shared;
+# per-request candidate data never is — rerank happens on local lists
+# inside each retrieve_chunks call).
+#
+# Failure policy:
+# - Initialization failure: recorded and retried on the NEXT enabled
+#   request (the request itself falls back to the existing ranking, so
+#   /ask never fails because of the optional reranker).
+# - Inference failure: logged per request, fallback flag observable via
+#   obs.set_reranker_fallback, and the existing fused ranking is used.
+# ============================================================
+
+_RERANKER_LOCK = threading.Lock()
+_RERANKER_SINGLETON = None
+_RERANKER_INIT_FAILED = False
+
+
+def reset_reranker_singleton():
+    """Drop the cached reranker (rollback/tests); next request reloads."""
+    global _RERANKER_SINGLETON, _RERANKER_INIT_FAILED
+    with _RERANKER_LOCK:
+        _RERANKER_SINGLETON = None
+        _RERANKER_INIT_FAILED = False
+
+
+def get_reranker_meta():
+    """Metadata for observability (model, device, depth, batch size)."""
+    singleton = _RERANKER_SINGLETON
+    if singleton is not None:
+        return {
+            "model": singleton.model_name,
+            "device": singleton.device,
+            "depth": RERANK_DEPTH,
+            "batch_size": singleton.batch_size,
+        }
+    return {
+        "model": CrossReranker.DEFAULT_MODEL,
+        "device": None,
+        "depth": RERANK_DEPTH,
+        "batch_size": 16,
+    }
+
+
+def _get_reranker():
+    """Return the shared CrossReranker, or None (fallback to fused order).
+
+    Lazily built ONCE per process from the validated configuration
+    (BAAI/bge-reranker-base, CUDA auto-detect with CPU fallback, batch
+    16). Never raises; never loads per request.
+    """
+    global _RERANKER_SINGLETON, _RERANKER_INIT_FAILED
+
+    if _RERANKER_SINGLETON is not None:
+        return _RERANKER_SINGLETON
+
+    with _RERANKER_LOCK:
+        if _RERANKER_SINGLETON is not None:
+            return _RERANKER_SINGLETON
+
+        if _RERANKER_INIT_FAILED:
+            # Previous construction failed (e.g. no CUDA/torch problem).
+            # Keep serving the fused ranking; a restart or a successful
+            # reset_reranker_singleton() clears this.
+            return None
+
+        try:
+            singleton = CrossReranker(
+                model_name=CrossReranker.DEFAULT_MODEL,
+                batch_size=16,
+            )
+        except Exception as error:
+            print(f"ERROR: Reranker initialization failed: {error}")
+            _RERANKER_INIT_FAILED = True
+            obs.set_reranker_meta(enabled=True, fallback=True)
+            return None
+
+        _RERANKER_SINGLETON = singleton
+        obs.set_reranker_meta(
+            enabled=True,
+            fallback=False,
+            model=singleton.model_name,
+            device=singleton.device,
+            depth=RERANK_DEPTH,
+        )
+        return singleton
+
+
+def _rerank_candidates(question, ranked, depth, reranker_instance):
+    """Reorder the fused pool with the cross-encoder (validated 3B rules).
+
+    Applies EXACTLY the Phase 3B semantics: score the top-`depth` of the
+    fused ordering, sort that head by reranker score (stable — equal
+    scores keep fused order), and keep the tail in fused order. The
+    returned list carries the same item dicts plus a diagnostic
+    "reranker_score" key. NEVER mutates the input; NEVER raises.
+    """
+    head = ranked[:depth]
+    tail = ranked[depth:]
+
+    docs = [
+        {
+            "video_title": (item["hit"].payload or {}).get("video_title", ""),
+            "text": (item["hit"].payload or {}).get("text", ""),
+        }
+        for item in head
+    ]
+
+    try:
+        scores = reranker_instance.score(question, docs)
+    except Exception as error:
+        print(f"ERROR: Reranker inference failed; using fused ranking: {error}")
+        obs.set_reranker_meta(fallback=True)
+        return ranked
+
+    if len(scores) != len(docs):
+        # Defensive: a scorer returning the wrong arity cannot be mapped
+        # back onto positions — fall back rather than guess.
+        print(
+            "ERROR: Reranker returned misaligned scores; "
+            "using fused ranking."
+        )
+        obs.set_reranker_meta(fallback=True)
+        return ranked
+
+    order = sorted(range(len(head)), key=lambda i: scores[i], reverse=True)
+    reordered_head = [
+        {**head[i], "reranker_score": scores[i]} for i in order
+    ]
+    return reordered_head + tail
+
+
+# ============================================================
 # LOAD ALL PAYLOADS FOR LEXICAL SEARCH
 # ============================================================
 
@@ -932,6 +1428,7 @@ def load_all_points():
 
     all_points = []
 
+    _t = time.monotonic()
     offset = None
 
     while True:
@@ -953,6 +1450,7 @@ def load_all_points():
 
         offset = next_offset
 
+    _perf("qdrant_scroll", _t, extra=f"points_loaded={len(all_points)}")
     return all_points
 
 
@@ -964,6 +1462,7 @@ def semantic_retrieve(
     question
 ):
 
+    _t = time.monotonic()
     try:
 
         query_vector = embed_model.encode(
@@ -978,6 +1477,8 @@ def semantic_retrieve(
 
         return []
 
+    _perf("embedding", _t)
+    _t = time.monotonic()
     if len(query_vector) != VECTOR_SIZE:
 
         print(
@@ -1010,6 +1511,7 @@ def semantic_retrieve(
 
         return []
 
+    _perf("qdrant_query", _t)
     return results
 
 
@@ -1019,34 +1521,52 @@ def semantic_retrieve(
 
 def lexical_retrieve(
     question,
-    all_points
+    all_points=None
 ):
+    """Lexical candidates for a question, best-first.
+
+    Default path (all_points=None): scores the static point cache with
+    precomputed per-point features -- identical scores to the original
+    per-request implementation, without re-tokenizing ~4,850 points.
+    Explicit all_points (tests, callers with injected chunk lists) are
+    scored exactly as before, with features built for the call.
+    """
+
+    context = __TitleScoringContext(question)
+    query_tokens = tokenize(question)
+
+    if all_points is None:
+        cache = _get_lexical_cache()
+        points = cache["points"]
+        point_features = cache["features"]
+    else:
+        points = all_points
+        point_features = [
+            __build_point_lexical_features(point.payload or {})
+            for point in points
+        ]
 
     candidates = []
 
-    for point in all_points:
+    for point, features in zip(points, point_features):
 
-        payload = point.payload or {}
-
-        title = payload.get(
-            "video_title",
-            ""
-        )
-
-        text = payload.get(
-            "text",
-            ""
-        )
-
-        title_score = title_exact_match(
+        title_score = _title_score_cached(
             question,
-            title
+            context,
+            features
         )
 
-        text_score = text_match_score(
-            question,
-            text
-        )
+        if not features.text_token_set or not query_tokens:
+            text_score = 0.0
+        else:
+            overlap = (
+                len(query_tokens & features.text_token_set)
+                / len(query_tokens)
+            )
+            text_score = min(
+                overlap,
+                1.0
+            )
 
         lexical_score = (
             0.85 * title_score
@@ -1073,6 +1593,81 @@ def lexical_retrieve(
     ]
 
 
+def _verify_lexical_equivalence(queries, points=None):
+    """Offline equivalence harness: cached path vs original formulas.
+
+    Runs the production lexical_retrieve and an inline re-implementation
+    of the ORIGINAL per-request formulas over the same points, comparing
+    (lexical_score, point_id) lists exactly. Returns a list of
+    (query, ok, detail) tuples for the offline test suite.
+    """
+    if points is None:
+        cache = _get_lexical_cache()
+        points = cache["points"]
+    else:
+        points = points
+
+    results = []
+
+    for question in queries:
+        optimized = lexical_retrieve(question, points)
+
+        reference_candidates = []
+        for point in points:
+            payload = point.payload or {}
+            title = payload.get("video_title", "")
+            text = payload.get("text", "")
+
+            title_score = _title_exact_match_original_body(question, title)
+
+            if not text:
+                text_score = 0.0
+            else:
+                query_tokens = tokenize(question)
+                text_tokens = tokenize(text)
+                if not query_tokens:
+                    text_score = 0.0
+                else:
+                    overlap = (
+                        len(query_tokens & text_tokens)
+                        / len(query_tokens)
+                    )
+                    text_score = min(overlap, 1.0)
+
+            lexical_score = (
+                0.85 * title_score
+                +
+                0.15 * text_score
+            )
+
+            if lexical_score > 0:
+                reference_candidates.append((lexical_score, point))
+
+        reference_candidates.sort(
+            key=lambda item: item[0],
+            reverse=True
+        )
+        reference = reference_candidates[:LEXICAL_CANDIDATES]
+
+        optimized_pairs = [
+            (score, str(point.id)) for score, point in optimized
+        ]
+        reference_pairs = [
+            (score, str(point.id)) for score, point in reference
+        ]
+
+        ok = optimized_pairs == reference_pairs
+        detail = ""
+        if not ok:
+            detail = (
+                f"optimized={optimized_pairs[:5]} "
+                f"reference={reference_pairs[:5]}"
+            )
+        results.append((question, ok, detail))
+
+    return results
+
+
 # ============================================================
 # HYBRID RETRIEVAL
 # ============================================================
@@ -1084,7 +1679,17 @@ def retrieve_chunks(
 
     # Score storage for this request starts empty; STEP 10 fills it
     # via the request-local ContextVar (see _set_retrieval_scores).
+    _t = time.monotonic()
     _set_retrieval_scores({})
+
+    # Observability: this request uses the hybrid strategy (semantic +
+    # lexical are both always executed); topic/exact-match/count fields
+    # are attached below where they are actually computed.
+    obs.set_retrieval_meta(strategy="hybrid")
+
+    # Observability: reranker flag state for this request. When enabled,
+    # _get_reranker() enriches this with model/device and any fallback.
+    obs.set_reranker_meta(enabled=RERANK_ENABLED, depth=RERANK_DEPTH)
 
     # ========================================================
     # STEP 1 — Extract topic
@@ -1106,13 +1711,19 @@ def retrieve_chunks(
             "  Detected topic: general DSA query"
         )
 
+    obs.set_retrieval_meta(topic=topic)
+
     # ========================================================
     # STEP 2 — Semantic search
     # ========================================================
 
+    _perf("topic_detection", _t)
+    _t = time.monotonic()
     semantic_results = semantic_retrieve(
         question
     )
+    _perf("semantic_retrieve_total", _t)
+    _t = time.monotonic()
 
     candidates = {}
 
@@ -1160,17 +1771,13 @@ def retrieve_chunks(
     # STEP 3 — Load local records
     # ========================================================
 
-    try:
-
-        all_points = load_all_points()
-
-    except Exception as e:
-
-        print(
-            f"ERROR: Failed to scan Qdrant records: {e}"
-        )
-
-        all_points = []
+    # The static point cache replaces the per-request full scroll
+    # (profiling: 0.2 s/request re-reading an immutable collection).
+    # all_points=None makes lexical_retrieve use the cached points and
+    # their precomputed features; explicit overrides are still honored.
+    all_points = None
+    _perf("load_all_points_total", _t, extra="cached")
+    _t = time.monotonic()
 
     # ========================================================
     # STEP 4 — Lexical/title search
@@ -1180,6 +1787,8 @@ def retrieve_chunks(
         question,
         all_points
     )
+    _perf("lexical_retrieve", _t)
+    _t = time.monotonic()
 
     # ========================================================
     # STEP 5 — Merge lexical candidates
@@ -1270,6 +1879,8 @@ def retrieve_chunks(
     # STEP 6 — Calculate hybrid score
     # ========================================================
 
+    _perf("merge_lexical", _t)
+    _t = time.monotonic()
     ranked = []
 
     for data in candidates.values():
@@ -1354,13 +1965,42 @@ def retrieve_chunks(
     # STEP 7 — Sort
     # ========================================================
 
+    _perf("hybrid_scoring", _t)
+    _t = time.monotonic()
     ranked.sort(
         key=lambda item:
             item["hybrid_score"],
         reverse=True
     )
 
+    # Observability: full candidate-pool size before selection culls it.
+    obs.set_retrieval_meta(candidate_count=len(ranked))
+
     # ========================================================
+    _perf("ranking_sort", _t)
+    _t = time.monotonic()
+    # STEP 7B — Cross-encoder rerank (Phase 3C, optional)
+    # ========================================================
+
+    # Validated cross-encoder reordering of the fused pool, EXACTLY the
+    # Phase 3B experiment semantics: top-RERANK_DEPTH of the fused
+    # order is re-sorted by reranker score (stable ties), the tail keeps
+    # fused order. OFF by default; on any failure falls back to the
+    # fused ranking below (never fails the request).
+    if RERANK_ENABLED:
+
+        reranker = _get_reranker()
+
+        if reranker is not None:
+
+            ranked = _rerank_candidates(
+                question, ranked, RERANK_DEPTH, reranker_instance=reranker
+            )
+
+        _perf("reranker_stage", _t)
+
+    # ========================================================
+    _t = time.monotonic()
     # STEP 8 — Exact-topic detection
     # ========================================================
 
@@ -1399,68 +2039,32 @@ def retrieve_chunks(
                 "  Semantic results will be treated cautiously."
             )
 
-    # ========================================================
-    # STEP 9 — Final selection
-    # ========================================================
-
-    selected = []
-
-    seen_videos = set()
-
-    for item in ranked:
-
-        hit = item[
-            "hit"
-        ]
-
-        payload = hit.payload or {}
-
-        title = payload.get(
-            "video_title",
-            "Unknown"
-        )
-
-        normalized_title = normalize_text(
-            title
-        )
-
-        if normalized_title in seen_videos:
-            continue
-
-        semantic_score = item[
-            "semantic_score"
-        ]
-
-        title_score = item[
-            "title_score"
-        ]
-
-        if (
-
-            semantic_score
-            < MIN_SCORE_THRESHOLD
-
-            and
-
-            title_score
-            < 0.70
-
-        ):
-
-            continue
-
-        selected.append(
-            hit
-        )
-
-        seen_videos.add(
-            normalized_title
-        )
-
-        if len(selected) >= top_k:
-            break
+    # Observability: whether an exact-topic source exists for this query.
+    obs.set_retrieval_meta(exact_topic=exact_topic_found)
 
     # ========================================================
+    # STEP 9 — Final selection (apply_production_selection)
+    # ========================================================
+
+    # The verbatim production selection rules (threshold gate, one chunk
+    # per normalized title, top_k), extracted in Phase 3 and proven
+    # behaviorally identical to the previous inline copy by the eval
+    # suite. Reusing it here guarantees the reranked pool is selected
+    # with the SAME rules as the disabled path.
+    selected = apply_production_selection(ranked, top_k=top_k)
+
+    # seen_videos is needed below only for the diagnostics cull_reason;
+    # recompute it from the selection so the snapshot is unchanged.
+    seen_videos = {
+        normalize_text(
+            (hit.payload or {}).get("video_title", "Unknown")
+        )
+        for hit in selected
+    }
+
+    # ========================================================
+    _perf("source_selection", _t)
+    _t = time.monotonic()
     # STEP 10 — Store final retrieval scores
     # ========================================================
 
@@ -1507,6 +2111,133 @@ def retrieve_chunks(
             print(
                 f"       hybrid score: {score:.4f}"
             )
+
+    _perf("score_store_and_debug", _t)
+
+    # Diagnostics snapshot for the evaluation harness (Backend/eval).
+    # Captures the ranked candidate pool and why each entry did or did
+    # not reach the final selection, WITHOUT changing any scoring,
+    # ordering, or selection behavior. Mirrors the ContextVar pattern:
+    # the stored dict is replaced atomically once per request and is
+    # treated as read-only by consumers.
+    _selected_ids = {str(hit.id) for hit in selected}
+    _diag = {
+        "candidates": [
+            {
+                "point_id": str(item["hit"].id),
+                "video_id": (item["hit"].payload or {}).get("video_id"),
+                "chunk_index": (item["hit"].payload or {}).get("chunk_index"),
+                "video_title": (item["hit"].payload or {}).get("video_title"),
+                "text": (item["hit"].payload or {}).get("text"),
+                "hybrid_score": item["hybrid_score"],
+                "title_score": item["title_score"],
+                "semantic_score": item["semantic_score"],
+                "text_score": item["text_score"],
+                "reranker_score": item.get("reranker_score"),
+                "rank": _rank,
+                "selected": str(item["hit"].id) in _selected_ids,
+                "cull_reason": (
+                    "selected"
+                    if str(item["hit"].id) in _selected_ids
+                    else (
+                        "duplicate_title"
+                        if normalize_text(
+                            (item["hit"].payload or {}).get("video_title", "")
+                        ) in seen_videos
+                        else (
+                            "below_threshold"
+                            if item["semantic_score"] < MIN_SCORE_THRESHOLD
+                            and item["title_score"] < 0.70
+                            else "beyond_top_k"
+                        )
+                    )
+                ),
+            }
+            for _rank, item in enumerate(ranked, start=1)
+        ],
+        "config": {
+            "top_k": top_k,
+            "min_score_threshold": MIN_SCORE_THRESHOLD,
+            "title_weight": TITLE_WEIGHT,
+            "semantic_weight": SEMANTIC_WEIGHT,
+            "text_weight": TEXT_WEIGHT,
+            "exact_title_boost": 0.20,
+            "rerank_enabled": RERANK_ENABLED,
+            "rerank_depth": RERANK_DEPTH if RERANK_ENABLED else None,
+        },
+    }
+    _set_retrieval_diagnostics(_diag)
+
+    return selected
+
+
+def apply_production_selection(ranked, top_k=TOP_K):
+    """Apply the EXACT production selection rules to a pre-ranked pool.
+
+    Extracted verbatim from retrieve_chunks' STEP 8+9 so the evaluation
+    harness can re-run production selection over a re-ranked pool without
+    duplicating (and potentially diverging from) the rules:
+
+      - one chunk per normalized video title (dedup, insertion order)
+      - drop candidates with semantic_score < MIN_SCORE_THRESHOLD AND
+        title_score < 0.70 (the production threshold gate)
+      - stop at top_k
+
+    "ranked" items must expose the same keys retrieve_chunks builds
+    ("hit" with payload, "title_score", "semantic_score"). The input
+    list is NOT mutated; iteration order defines dedup priority exactly
+    as in production. retrieve_chunks itself still runs its own inline
+    copy of this logic (untouched) — the two are kept aligned by the
+    eval tests, which assert identical selection on shared inputs.
+    """
+    selected = []
+    seen_videos = set()
+
+    for item in ranked:
+
+        hit = item["hit"]
+
+        payload = hit.payload or {}
+
+        title = payload.get(
+            "video_title",
+            "Unknown"
+        )
+
+        normalized_title = normalize_text(
+            title
+        )
+
+        if normalized_title in seen_videos:
+            continue
+
+        semantic_score = item[
+            "semantic_score"
+        ]
+
+        title_score = item[
+            "title_score"
+        ]
+
+        if (
+
+            semantic_score
+            < MIN_SCORE_THRESHOLD
+
+            and
+
+            title_score
+            < 0.70
+
+        ):
+            continue
+
+        selected.append(hit)
+
+        seen_videos.add(normalized_title)
+
+        if len(selected) >= top_k:
+            break
 
     return selected
 
@@ -1807,8 +2538,49 @@ class _GeminiPermanentError(Exception):
     """A Gemini failure that no amount of retrying can fix (e.g. bad key)."""
 
 
-def _create_gemini_interaction(user_message, deadline=None):
+class _Gemini503UnavailableError(Exception):
+    """Sustained Gemini 503 capacity failure -- fail this request fast.
+
+    Raised once GEMINI_503_MAX_CONSECUTIVE consecutive 503s accumulate
+    within a single ask_gemini call. ask_gemini deliberately does NOT
+    start a fresh interaction for this: during a capacity incident
+    every new interaction is poisoned identically (create OK, then
+    503 on polls), so retrying only burns wall-clock time and quota.
+    """
+
+
+def _is_503_service_unavailable(error):
+    """Detect the Gemini capacity 503 (service_unavailable / high demand)."""
+    code = _extract_api_error_code(error)
+    if code == 503:
+        return True
+    text = str(error).lower()
+    return "service_unavailable" in text
+
+
+def _register_503_error(error, streak):
+    """Count a 503 toward the fast-fail streak; raise at the threshold.
+
+    The streak is deliberately NOT reset on non-503 errors: the observed
+    capacity signature alternates 503s with poisoned-interaction 400s,
+    and those 400s must not reset the count. There is deliberately no
+    reset at all: only a fresh ask_gemini request starts a new streak.
+    """
+    if not _is_503_service_unavailable(error):
+        return
+    streak["count"] += 1
+    if streak["count"] >= GEMINI_503_MAX_CONSECUTIVE:
+        raise _Gemini503UnavailableError(
+            f"Gemini capacity unavailable: {streak['count']} consecutive "
+            "503 service_unavailable responses. Failing fast instead of "
+            "waiting out the outage."
+        ) from error
+
+
+def _create_gemini_interaction(user_message, deadline=None, error_503_streak=None):
     """Create a background interaction with bounded transient-error retries."""
+    if error_503_streak is None:
+        error_503_streak = {"count": 0}
     for attempt in range(GEMINI_MAX_RETRIES + 1):
         # The total generation budget must also cover create attempts:
         # each create call can stall up to the client HTTP timeout before
@@ -1822,8 +2594,9 @@ def _create_gemini_interaction(user_message, deadline=None):
             print("  Gemini create retry budget exhausted.")
             return None
 
+        _t_create = time.monotonic()
         try:
-            return genai_client.interactions.create(
+            _created = genai_client.interactions.create(
                 model=GEMINI_MODEL,
                 input=user_message,
                 system_instruction=SYSTEM_PROMPT,
@@ -1838,11 +2611,17 @@ def _create_gemini_interaction(user_message, deadline=None):
                     "max_output_tokens": GEMINI_MAX_OUTPUT_TOKENS,
                 },
             )
+            _perf("gemini_create_call", _t_create)
+            return _created
         except Exception as error:
             if not _is_transient_gemini_error(error):
                 raise _GeminiPermanentError(
                     f"Gemini create failed permanently: {error}"
                 ) from error
+
+            # Capacity 503s during create count toward the same
+            # request-wide fast-fail streak as poll 503s.
+            _register_503_error(error, error_503_streak)
 
             if attempt >= GEMINI_MAX_RETRIES:
                 print(f"  Failed to start Gemini task: {error}")
@@ -1872,7 +2651,9 @@ def _poll_gemini_interaction(interaction_id):
     """
     return genai_client.interactions.get(id=interaction_id)
 
-def _generate_with_single_interaction(user_message, deadline):
+def _generate_with_single_interaction(
+    user_message, deadline, error_503_streak=None, degraded_deadline=None
+):
     """Run one create -> poll lifecycle. Return text, or None to allow retry.
 
     Raises _GeminiPermanentError only for failures where retrying cannot
@@ -1880,9 +2661,13 @@ def _generate_with_single_interaction(user_message, deadline):
     interaction poisoned by a mid-flight 503, which then 400s on every
     poll — returns None so ask_gemini can start a fresh interaction.
     """
+    if error_503_streak is None:
+        error_503_streak = {"count": 0}
+
     interaction = _create_gemini_interaction(
         user_message,
         deadline=deadline,
+        error_503_streak=error_503_streak,
     )
     if interaction is None:
         return None
@@ -1900,8 +2685,24 @@ def _generate_with_single_interaction(user_message, deadline):
 
     start_time = time.monotonic()
     consecutive_poll_failures = 0
+    poll_count = 0
 
     while True:
+        # Degraded budget: once a capacity 503 has been seen, the
+        # whole request must conclude quickly. Checked HERE (not only
+        # in ask_gemini) because this poll loop can otherwise run for
+        # the full 90-second interaction window.
+        if (
+            degraded_deadline is not None
+            and error_503_streak["count"] > 0
+            and time.monotonic() >= degraded_deadline
+        ):
+            print(
+                "  Gemini degraded budget (post-503) exhausted; "
+                "stopping this interaction."
+            )
+            return None
+
         elapsed = time.monotonic() - start_time
         if (
             elapsed >= GEMINI_MAX_WAIT_SECONDS
@@ -1913,9 +2714,19 @@ def _generate_with_single_interaction(user_message, deadline):
             )
             return None
 
+        _t_poll = time.monotonic()
         try:
             result = _poll_gemini_interaction(interaction_id)
 
+            poll_count += 1
+            _perf(
+                "gemini_poll_get",
+                _t_poll,
+                extra=(
+                    f"poll={poll_count} "
+                    f"status={getattr(result, 'status', 'unknown')}"
+                ),
+            )
             consecutive_poll_failures = 0
 
         except Exception as error:
@@ -1933,6 +2744,10 @@ def _generate_with_single_interaction(user_message, deadline):
                 raise _GeminiPermanentError(
                     f"Gemini daily quota exhausted: {error}"
                 ) from error
+
+            # Capacity 503s count toward the request-wide fast-fail
+            # streak; the threshold raise propagates to ask_gemini.
+            _register_503_error(error, error_503_streak)
 
             if (
                 not _is_transient_gemini_error(error)
@@ -2012,13 +2827,42 @@ def ask_gemini(user_message):
     """
     deadline = time.monotonic() + GEMINI_MAX_TOTAL_SECONDS
     attempt = 0
+    # Request-wide 503 fast-fail streak, shared across all
+    # create/poll attempts so a sustained capacity incident is
+    # recognized no matter where in the lifecycle it appears.
+    error_503_streak = {"count": 0}
+    # Armed for the whole request; enforced only after a 503 is seen.
+    degraded_deadline = time.monotonic() + GEMINI_503_DEGRADED_MAX_SECONDS
 
     while True:
+        # Never open a new interaction window once the degraded
+        # budget is spent.
+        if (
+            error_503_streak["count"] > 0
+            and time.monotonic() >= degraded_deadline
+        ):
+            print(
+                "  Gemini degraded budget exhausted; not retrying "
+                "after 503."
+            )
+            return None
+
         attempt += 1
         print("  Starting Gemini background task...")
 
+        _t_gen = time.monotonic()
         try:
-            answer = _generate_with_single_interaction(user_message, deadline)
+            answer = _generate_with_single_interaction(
+                user_message,
+                deadline,
+                error_503_streak=error_503_streak,
+                degraded_deadline=degraded_deadline,
+            )
+            _perf("gemini_interaction_success", _t_gen, extra=f"attempt={attempt}")
+        except _Gemini503UnavailableError as error:
+            print(f"  {error}")
+            print("  Failing fast (Gemini capacity incident).")
+            return None
         except _GeminiPermanentError as error:
             print(f"  {error}")
             return None

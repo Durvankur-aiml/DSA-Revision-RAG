@@ -323,6 +323,156 @@ class TestDeadlines:
 
 
 # ---------------------------------------------------------------------------
+# TC-13b: sustained-503 fast fail (added after the 2026-09-25 capacity
+# incident where two 90s interaction windows kept the user waiting ~190s)
+# ---------------------------------------------------------------------------
+
+class TestSustained503FastFail:
+    def test_three_consecutive_503_polls_fail_fast(self, gemini_mock, fake_clock):
+        """A sustained capacity incident must fail within seconds, not minutes.
+
+        Three consecutive 503 responses cross GEMINI_503_MAX_CONSECUTIVE:
+        ask_gemini aborts without starting a second interaction.
+        """
+        gemini_mock.get_script = [
+            FakeInteraction(status="in_progress"),
+            transient_503(),
+            transient_503(),
+            transient_503(),
+        ]
+
+        answer = ask.ask_gemini("test message")
+
+        assert answer is None
+        # No fresh interaction after the fast-fail decision.
+        assert gemini_mock.create_calls == 1
+        # Bounded: two poll-retry backoffs only; no 90s interaction
+        # window, no second lifecycle.
+        assert total_sleep_wait(fake_clock) < 30
+
+    def test_two_503s_then_success_still_recovers(
+        self, gemini_mock, fake_clock
+    ):
+        """Brief blips keep the existing recovery behavior (regression guard)."""
+        gemini_mock.get_script = [
+            FakeInteraction(status="in_progress"),
+            transient_503(),
+            transient_503(),
+            FakeInteraction(status="completed", output_text="recovered"),
+        ]
+
+        answer = ask.ask_gemini("test message")
+
+        assert answer == "recovered"
+        assert gemini_mock.create_calls == 1
+
+    def test_503_streak_blocks_new_interaction_windows(
+        self, gemini_mock, fake_clock
+    ):
+        """After 503s put the request in the degraded state, the outer
+        loop must NOT open another 90-second interaction window.
+
+        Two 503s accumulate, a successful poll does NOT reset them
+        (live evidence: polls of in_progress interactions succeed even
+        while generation 503s), the current window then runs out of
+        useful work, and the outer loop stops instead of retrying.
+        """
+        gemini_mock.get_script = [
+            transient_503(),
+            transient_503(),
+            FakeInteraction(status="in_progress"),  # success: no reset
+        ]
+
+        answer = ask.ask_gemini("test message")
+
+        assert answer is None
+        # Exactly one interaction: no new window after the degraded
+        # budget (GEMINI_503_DEGRADED_MAX_SECONDS) is spent.
+        assert gemini_mock.create_calls == 1
+        assert total_sleep_wait(fake_clock) < 30
+
+    def test_successful_poll_does_not_reset_503_streak(
+        self, gemini_mock, fake_clock
+    ):
+        """A successful GET between 503s must NOT wipe earlier 503s.
+
+        Live incident signature: polls succeed while generation 503s,
+        so reset-on-success would let an incident run forever.
+        """
+        gemini_mock.get_script = [
+            transient_503(),                        # streak 1
+            transient_503(),                        # streak 2
+            FakeInteraction(status="in_progress"),  # successful GET
+            transient_503(),                        # streak 3 -> fast fail
+            transient_503(),
+            FakeInteraction(status="completed", output_text="never reached"),
+        ]
+
+        answer = ask.ask_gemini("test message")
+
+        assert answer is None
+        # The fast-fail fires at the third total 503; no fresh
+        # interaction is created and later script items never run.
+        assert gemini_mock.create_calls == 1
+        assert total_sleep_wait(fake_clock) < 30
+
+    def test_503_and_poisoned_400_interleave_fails_fast(
+        self, gemini_mock, fake_clock
+    ):
+        """The real-world signature: 503s alternating with the 400s of a
+        poisoned interaction. The 400s must NOT reset the 503 streak.
+
+        Lifecycles 1 and 2 each end via the non-transient 400 (the
+        poison path), but the request-wide streak keeps counting: 503,
+        503, then the third 503 crosses the threshold inside lifecycle
+        3 -- which is then the LAST interaction created.
+        """
+        gemini_mock.get_script = [
+            transient_503(),                        # streak 1
+            invalid_request_400(),                  # poisoned; NOT a reset
+            transient_503(),                        # streak 2
+            invalid_request_400(),                  # still not a reset
+            transient_503(),                        # streak 3 -> fast fail
+        ]
+
+        answer = ask.ask_gemini("test message")
+
+        assert answer is None
+        # Two poisoned lifecycles complete before the threshold fires;
+        # no fourth interaction is created after the fast-fail.
+        assert gemini_mock.create_calls == 3
+        assert total_sleep_wait(fake_clock) < 30
+
+    def test_503_on_create_counts_toward_streak(
+        self, gemini_mock, fake_clock, monkeypatch
+    ):
+        """Capacity 503s during create are part of the same incident.
+
+        The create call fails with 503 persistently (the fixture's
+        create_error raises only once, so patch the call itself):
+        streak 1, backoff, streak 2, backoff, streak 3 -> fast fail
+        before any interaction is ever created.
+        """
+        create_attempts = {"count": 0}
+
+        def failing_create(**kwargs):
+            create_attempts["count"] += 1
+            raise transient_503()
+
+        monkeypatch.setattr(gemini_mock, "create", failing_create)
+
+        answer = ask.ask_gemini("test message")
+
+        assert answer is None
+        # Three create attempts: streak 1, 2, then threshold on 3.
+        assert create_attempts["count"] == 3
+        assert gemini_mock.get_calls == 0
+        # Two create-retry backoffs only; the third 503 raised.
+        assert len(fake_clock.sleeps) == 2
+        assert total_sleep_wait(fake_clock) < 30
+
+
+# ---------------------------------------------------------------------------
 # TC-13: malformed / unexpected Gemini responses
 # ---------------------------------------------------------------------------
 
