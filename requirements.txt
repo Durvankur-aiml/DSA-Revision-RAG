@@ -1,0 +1,35 @@
+# ALGOFORGE — verified dependency pins (2026-09-27)
+# Generated from the live venv (`pip freeze`) — versions that the project is
+# known-good with. Only direct project dependencies are listed here (not the
+# full transitive freeze); pip resolves the rest.
+#
+# Regeneration command if ever needed:
+#   ./venv/Scripts/python.exe -m pip freeze > requirements-freeze.txt
+
+# --- Ingestion ---------------------------------------------------------
+yt-dlp==2026.8.19              # YouTube playlist audio download
+openai-whisper==20250625       # transcript generation (GPU/CPU)
+
+# --- Embeddings / vector store ----------------------------------------
+sentence-transformers==6.0.1   # all-MiniLM-L6-v2 embeddings (384-dim)
+qdrant-client==1.19.0          # local persistent vector DB client
+
+# --- Generation --------------------------------------------------------
+google-genai==2.23.0           # Gemini SDK (background interactions API)
+
+# --- API ---------------------------------------------------------------
+fastapi==0.141.1               # /ask service
+uvicorn==0.53.0                # local ASGI server
+
+# --- Tests -------------------------------------------------------------
+pytest==9.1.1
+
+# Notes:
+# - torch is intentionally NOT pinned here. The project runs a CUDA build
+#   (torch 2.14.0+cu130) whose correct wheel is platform/GPU-specific; it is
+#   installed from the CUDA index, not PyPI, and blind `pip install -r` from
+#   PyPI would silently replace it with the CPU build. Install torch first
+#   per platform, then `pip install -r requirements.txt`.
+# - Transitive versions (numpy 2.4.6, transformers 5.16.1, etc.) are
+#   resolved by pip; a full freeze is captured in requirements-freeze.txt
+#   alongside this file for exact-environment reproduction.

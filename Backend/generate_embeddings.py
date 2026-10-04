@@ -24,17 +24,26 @@ def fail(message):
 
 
 def load_metadata(video_id):
+    """Return metadata for a video, or None when it cannot be trusted.
+
+    A missing or malformed metadata file is a HARD SKIP condition, not a
+    fallback: fabricating a title (the raw video_id) or a YouTube URL
+    poisons every downstream stage — the fake values get embedded into
+    Qdrant payloads, surfaced in source cards, and can never be
+    distinguished from real metadata afterwards. This fallback mechanism
+    produced the historical title-keyed debris (see ARCHITECTURE_AUDIT J3).
+    The ingest chain (download_audio.py) guarantees metadata for every
+    audio file, so a miss here means the pipeline was run out of order —
+    re-run download, then re-run this script (it is resumable).
+    """
 
     metadata_path = os.path.join(METADATA_DIR, f"{video_id}.json")
 
     if not os.path.exists(metadata_path):
-        print(f"  WARNING: No metadata file for video_id '{video_id}'. "
-              f"Using fallback values.")
-        return {
-            "video_id": video_id,
-            "video_title": video_id,
-            "youtube_url": f"https://youtu.be/{video_id}",
-        }
+        print(f"  ERROR: No metadata file for video_id '{video_id}'. "
+              f"SKIPPING this video — run download_audio.py first. "
+              f"(Refusing to fabricate title/URL.)")
+        return None
 
     try:
         with open(metadata_path, "r", encoding="utf-8") as file:
@@ -44,13 +53,9 @@ def load_metadata(video_id):
                     raise ValueError(f"missing key '{key}'")
             return data
     except (OSError, json.JSONDecodeError, ValueError) as e:
-        print(f"  WARNING: Failed to load metadata for '{video_id}': {e}. "
-              f"Using fallback values.")
-        return {
-            "video_id": video_id,
-            "video_title": video_id,
-            "youtube_url": f"https://youtu.be/{video_id}",
-        }
+        print(f"  ERROR: Failed to load metadata for '{video_id}': {e}. "
+              f"SKIPPING this video. (Refusing to fabricate title/URL.)")
+        return None
 
 
 def main():
@@ -159,6 +164,10 @@ def main():
             continue
 
         video_metadata = load_metadata(video_id)
+        if video_metadata is None:
+            # Hard skip: no fabricated metadata may enter the index.
+            failed_videos.append(transcript_file)
+            continue
 
         texts = [c["text"] for c in valid_chunks]
 

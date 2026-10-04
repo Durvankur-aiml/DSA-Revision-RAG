@@ -15,6 +15,7 @@ qdrant_db/
 
 # Runtime artifacts (server logs, ad-hoc API response dumps)
 *.log
+logs/
 ask_response*.json
 ask_bst.json
 

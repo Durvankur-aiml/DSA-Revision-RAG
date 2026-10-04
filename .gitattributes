@@ -1,0 +1,31 @@
+# Normalize line endings: the repo stores LF; working copies may use any EOL.
+# This kills the historical "390 files modified with zero real changes" CRLF
+# noise (ARCHITECTURE_AUDIT F2).
+#
+# NOTE: applying this requires a one-time `git add --renormalize .` COMMIT,
+# which rewrites line endings of tracked text files. That was deliberately
+# NOT executed during Phase 0 (it touches every tracked JSON and must only
+# happen in its own commit with a clean Data/ tree). Until that commit is
+# made, this file has no effect on already-tracked files.
+
+* text=auto
+
+# Source and config: always LF in the repository.
+*.py text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.txt text eol=lf
+*.html text eol=lf
+*.css text eol=lf
+*.js text eol=lf
+*.jsx text eol=lf
+*.svg text eol=lf
+
+# Windows scripts keep CRLF so they stay runnable in cmd.exe.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Never touch these: binary or huge generated assets.
+*.mp3 binary
+*.woff2 binary
+*.woff binary
