@@ -1,0 +1,749 @@
+{
+  "generated_at": "2026-09-27T06:53:21+00:00",
+  "dataset": {
+    "path": "D:\\Mission - Anthropic\\DSA RAG\\Data\\eval\\golden.jsonl",
+    "n": 100
+  },
+  "retrieval_configuration": {
+    "top_k": 6,
+    "semantic_candidates": 40,
+    "lexical_candidates": 40,
+    "min_score_threshold": 0.25,
+    "fusion_weights": {
+      "title": 0.6,
+      "semantic": 0.3,
+      "text": 0.1
+    },
+    "exact_title_boost": 0.2,
+    "embedding_model": "all-MiniLM-L6-v2",
+    "vector_size": 384,
+    "qdrant_collection": "striver_a2z",
+    "gemini_model": "gemini-3.7-flash",
+    "git_commit": "178d849"
+  },
+  "reranker": {
+    "model_name": "BAAI/bge-reranker-base",
+    "device": "cuda",
+    "batch_size": 16,
+    "depths": [
+      10,
+      20,
+      30,
+      40,
+      60
+    ]
+  },
+  "experiments": [
+    {
+      "experiment": "Baseline",
+      "depth": null,
+      "hit@1": 0.62,
+      "hit@3": 0.8,
+      "hit@5": 0.87,
+      "hit@6": 0.91,
+      "recall@6": 0.91,
+      "recall@20_cand": 0.98,
+      "mrr": 0.7253333333333335,
+      "retrieval_p50_s": 0.17116249999889988,
+      "rerank_p50_s": null,
+      "rerank_p95_s": null,
+      "total_p50_s": 0.17116249999889988
+    },
+    {
+      "experiment": "CrossEncoder",
+      "depth": 10,
+      "hit@1": 0.73,
+      "hit@3": 0.81,
+      "hit@5": 0.87,
+      "hit@6": 0.9,
+      "recall@6": 0.9,
+      "recall@20_cand": 0.98,
+      "mrr": 0.7873333333333334,
+      "retrieval_p50_s": 0.16819890000078885,
+      "rerank_p50_s": 0.1366357999995671,
+      "rerank_p95_s": 0.15637000000060652,
+      "total_p50_s": 0.30355040000176814
+    },
+    {
+      "experiment": "CrossEncoder",
+      "depth": 20,
+      "hit@1": 0.75,
+      "hit@3": 0.83,
+      "hit@5": 0.89,
+      "hit@6": 0.92,
+      "recall@6": 0.92,
+      "recall@20_cand": 0.98,
+      "mrr": 0.8073333333333335,
+      "retrieval_p50_s": 0.1547817999999097,
+      "rerank_p50_s": 0.27465980000124546,
+      "rerank_p95_s": 0.30343009999887727,
+      "total_p50_s": 0.42862390000118467
+    },
+    {
+      "experiment": "CrossEncoder",
+      "depth": 30,
+      "hit@1": 0.75,
+      "hit@3": 0.84,
+      "hit@5": 0.88,
+      "hit@6": 0.92,
+      "recall@6": 0.92,
+      "recall@20_cand": 0.98,
+      "mrr": 0.8078333333333336,
+      "retrieval_p50_s": 0.15786630000002333,
+      "rerank_p50_s": 0.4085567000001902,
+      "rerank_p95_s": 0.4439246000001731,
+      "total_p50_s": 0.565929899999901
+    },
+    {
+      "experiment": "CrossEncoder",
+      "depth": 40,
+      "hit@1": 0.74,
+      "hit@3": 0.84,
+      "hit@5": 0.88,
+      "hit@6": 0.92,
+      "recall@6": 0.92,
+      "recall@20_cand": 0.98,
+      "mrr": 0.8028333333333336,
+      "retrieval_p50_s": 0.1340849000007438,
+      "rerank_p50_s": 0.5598847999990539,
+      "rerank_p95_s": 0.606872199999998,
+      "total_p50_s": 0.6878790999999183
+    },
+    {
+      "experiment": "CrossEncoder",
+      "depth": 60,
+      "hit@1": 0.84,
+      "hit@3": 0.95,
+      "hit@5": 0.97,
+      "hit@6": 0.99,
+      "recall@6": 0.99,
+      "recall@20_cand": 0.98,
+      "mrr": 0.8995000000000001,
+      "retrieval_p50_s": 0.17028639999989537,
+      "rerank_p50_s": 0.8974921999997605,
+      "rerank_p95_s": 0.9509965000015654,
+      "total_p50_s": 1.0689808999995876
+    }
+  ],
+  "failure_recovery": [
+    {
+      "eval_id": "eval_002",
+      "question": "What is lower bound and upper bound in binary search?",
+      "expected_video_ids": [
+        "6zhGS79oQ4k"
+      ],
+      "baseline_final_rank": null,
+      "reranker_final_rank": 2,
+      "baseline_selected": false,
+      "reranker_selected": true,
+      "best_pool_rank": 48,
+      "reranker_score": 0.9967621564865112
+    },
+    {
+      "eval_id": "eval_005",
+      "question": "How does binary search work on the answer space, like Koko eating bananas?",
+      "expected_video_ids": [
+        "qyfekrNni90"
+      ],
+      "baseline_final_rank": null,
+      "reranker_final_rank": null,
+      "baseline_selected": false,
+      "reranker_selected": false,
+      "best_pool_rank": 63,
+      "reranker_score": null
+    },
+    {
+      "eval_id": "eval_012",
+      "question": "How does the longest substring without repeating characters work?",
+      "expected_video_ids": [
+        "-zSxTJkcdAo"
+      ],
+      "baseline_final_rank": null,
+      "reranker_final_rank": 1,
+      "baseline_selected": false,
+      "reranker_selected": true,
+      "best_pool_rank": 41,
+      "reranker_score": 0.9938557744026184
+    },
+    {
+      "eval_id": "eval_018",
+      "question": "What is the minimum window substring approach?",
+      "expected_video_ids": [
+        "WJaij9ffOIY"
+      ],
+      "baseline_final_rank": null,
+      "reranker_final_rank": 1,
+      "baseline_selected": false,
+      "reranker_selected": true,
+      "best_pool_rank": 42,
+      "reranker_score": 0.9882320761680603
+    },
+    {
+      "eval_id": "eval_033",
+      "question": "How does Floyd's cycle detection work for linked lists?",
+      "expected_video_ids": [
+        "wiOo4DC5GGA"
+      ],
+      "baseline_final_rank": null,
+      "reranker_final_rank": 1,
+      "baseline_selected": false,
+      "reranker_selected": true,
+      "best_pool_rank": 60,
+      "reranker_score": 0.3385142385959625
+    },
+    {
+      "eval_id": "eval_045",
+      "question": "Explain the tree traversals: inorder, preorder and postorder.",
+      "expected_video_ids": [
+        "jmy0LaGET1I"
+      ],
+      "baseline_final_rank": null,
+      "reranker_final_rank": 2,
+      "baseline_selected": false,
+      "reranker_selected": true,
+      "best_pool_rank": 19,
+      "reranker_score": 0.9757874011993408
+    },
+    {
+      "eval_id": "eval_050",
+      "question": "Explain Morris traversal for inorder without recursion or stack.",
+      "expected_video_ids": [
+        "80Zug6D1_r4"
+      ],
+      "baseline_final_rank": null,
+      "reranker_final_rank": 1,
+      "baseline_selected": false,
+      "reranker_selected": true,
+      "best_pool_rank": 47,
+      "reranker_score": 0.8682459592819214
+    },
+    {
+      "eval_id": "eval_057",
+      "question": "How do I validate whether a binary tree is a BST?",
+      "expected_video_ids": [
+        "f-sj7I5oXEI"
+      ],
+      "baseline_final_rank": null,
+      "reranker_final_rank": 1,
+      "baseline_selected": false,
+      "reranker_selected": true,
+      "best_pool_rank": 51,
+      "reranker_score": 0.9901195764541626
+    },
+    {
+      "eval_id": "eval_099",
+      "question": "How does lower bound work and where is it used in binary search?",
+      "expected_video_ids": [
+        "6zhGS79oQ4k"
+      ],
+      "baseline_final_rank": null,
+      "reranker_final_rank": 2,
+      "baseline_selected": false,
+      "reranker_selected": true,
+      "best_pool_rank": 50,
+      "reranker_score": 0.97704017162323
+    }
+  ],
+  "per_question_baseline": [
+    {
+      "eval_id": "eval_001",
+      "hit@6": 1,
+      "mrr": 0.5
+    },
+    {
+      "eval_id": "eval_002",
+      "hit@6": 0,
+      "mrr": 0.0
+    },
+    {
+      "eval_id": "eval_003",
+      "hit@6": 1,
+      "mrr": 1.0
+    },
+    {
+      "eval_id": "eval_004",
+      "hit@6": 1,
+      "mrr": 0.5
+    },
+    {
+      "eval_id": "eval_005",
+      "hit@6": 0,
+      "mrr": 0.0
+    },
+    {
+      "eval_id": "eval_006",
+      "hit@6": 1,
+      "mrr": 1.0
+    },
+    {
+      "eval_id": "eval_007",
+      "hit@6": 1,
+      "mrr": 0.25
+    },
+    {
+      "eval_id": "eval_008",
+      "hit@6": 1,
+      "mrr": 1.0
+    },
+    {
+      "eval_id": "eval_009",
+      "hit@6": 1,
+      "mrr": 1.0
+    },
+    {
+      "eval_id": "eval_010",
+      "hit@6": 1,
+      "mrr": 1.0
+    },
+    {
+      "eval_id": "eval_011",
+      "hit@6": 1,
+      "mrr": 1.0
+    },
+    {
+      "eval_id": "eval_012",
+      "hit@6": 0,
+      "mrr": 0.0
+    },
+    {
+      "eval_id": "eval_013",
+      "hit@6": 1,
+      "mrr": 1.0
+    },
+    {
+      "eval_id": "eval_014",
+      "hit@6": 1,
+      "mrr": 1.0
+    },
+    {
+      "eval_id": "eval_015",
+      "hit@6": 1,
+      "mrr": 1.0
+    },
+    {
+      "eval_id": "eval_016",
+      "hit@6": 1,
+      "mrr": 0.5
+    },
+    {
+      "eval_id": "eval_017",
+      "hit@6": 1,
+      "mrr": 1.0
+    },
+    {
+      "eval_id": "eval_018",
+      "hit@6": 0,
+      "mrr": 0.0
+    },
+    {
+      "eval_id": "eval_019",
+      "hit@6": 1,
+      "mrr": 1.0
+    },
+    {
+      "eval_id": "eval_020",
+      "hit@6": 1,
+      "mrr": 1.0
+    },
+    {
+      "eval_id": "eval_021",
+      "hit@6": 1,
+      "mrr": 1.0
+    },
+    {
+      "eval_id": "eval_022",
+      "hit@6": 1,
+      "mrr": 1.0
+    },
+    {
+      "eval_id": "eval_023",
+      "hit@6": 1,
+      "mrr": 0.16666666666666666
+    },
+    {
+      "eval_id": "eval_024",
+      "hit@6": 1,
+      "mrr": 0.5
+    },
+    {
+      "eval_id": "eval_025",
+      "hit@6": 1,
+      "mrr": 1.0
+    },
+    {
+      "eval_id": "eval_026",
+      "hit@6": 1,
+      "mrr": 1.0
+    },
+    {
+      "eval_id": "eval_027",
+      "hit@6": 1,
+      "mrr": 1.0
+    },
+    {
+      "eval_id": "eval_028",
+      "hit@6": 1,
+      "mrr": 1.0
+    },
+    {
+      "eval_id": "eval_029",
+      "hit@6": 1,
+      "mrr": 1.0
+    },
+    {
+      "eval_id": "eval_030",
+      "hit@6": 1,
+      "mrr": 1.0
+    },
+    {
+      "eval_id": "eval_031",
+      "hit@6": 1,
+      "mrr": 0.16666666666666666
+    },
+    {
+      "eval_id": "eval_032",
+      "hit@6": 1,
+      "mrr": 0.16666666666666666
+    },
+    {
+      "eval_id": "eval_033",
+      "hit@6": 0,
+      "mrr": 0.0
+    },
+    {
+      "eval_id": "eval_034",
+      "hit@6": 1,
+      "mrr": 0.2
+    },
+    {
+      "eval_id": "eval_035",
+      "hit@6": 1,
+      "mrr": 0.5
+    },
+    {
+      "eval_id": "eval_036",
+      "hit@6": 1,
+      "mrr": 1.0
+    },
+    {
+      "eval_id": "eval_037",
+      "hit@6": 1,
+      "mrr": 0.25
+    },
+    {
+      "eval_id": "eval_038",
+      "hit@6": 1,
+      "mrr": 0.25
+    },
+    {
+      "eval_id": "eval_039",
+      "hit@6": 1,
+      "mrr": 1.0
+    },
+    {
+      "eval_id": "eval_040",
+      "hit@6": 1,
+      "mrr": 0.3333333333333333
+    },
+    {
+      "eval_id": "eval_041",
+      "hit@6": 1,
+      "mrr": 1.0
+    },
+    {
+      "eval_id": "eval_042",
+      "hit@6": 1,
+      "mrr": 1.0
+    },
+    {
+      "eval_id": "eval_043",
+      "hit@6": 1,
+      "mrr": 1.0
+    },
+    {
+      "eval_id": "eval_044",
+      "hit@6": 1,
+      "mrr": 1.0
+    },
+    {
+      "eval_id": "eval_045",
+      "hit@6": 0,
+      "mrr": 0.0
+    },
+    {
+      "eval_id": "eval_046",
+      "hit@6": 1,
+      "mrr": 1.0
+    },
+    {
+      "eval_id": "eval_047",
+      "hit@6": 1,
+      "mrr": 1.0
+    },
+    {
+      "eval_id": "eval_048",
+      "hit@6": 1,
+      "mrr": 1.0
+    },
+    {
+      "eval_id": "eval_049",
+      "hit@6": 1,
+      "mrr": 0.5
+    },
+    {
+      "eval_id": "eval_050",
+      "hit@6": 0,
+      "mrr": 0.0
+    },
+    {
+      "eval_id": "eval_051",
+      "hit@6": 1,
+      "mrr": 1.0
+    },
+    {
+      "eval_id": "eval_052",
+      "hit@6": 1,
+      "mrr": 1.0
+    },
+    {
+      "eval_id": "eval_053",
+      "hit@6": 1,
+      "mrr": 1.0
+    },
+    {
+      "eval_id": "eval_054",
+      "hit@6": 1,
+      "mrr": 1.0
+    },
+    {
+      "eval_id": "eval_055",
+      "hit@6": 1,
+      "mrr": 1.0
+    },
+    {
+      "eval_id": "eval_056",
+      "hit@6": 1,
+      "mrr": 1.0
+    },
+    {
+      "eval_id": "eval_057",
+      "hit@6": 0,
+      "mrr": 0.0
+    },
+    {
+      "eval_id": "eval_058",
+      "hit@6": 1,
+      "mrr": 1.0
+    },
+    {
+      "eval_id": "eval_059",
+      "hit@6": 1,
+      "mrr": 1.0
+    },
+    {
+      "eval_id": "eval_060",
+      "hit@6": 1,
+      "mrr": 1.0
+    },
+    {
+      "eval_id": "eval_061",
+      "hit@6": 1,
+      "mrr": 0.5
+    },
+    {
+      "eval_id": "eval_062",
+      "hit@6": 1,
+      "mrr": 0.3333333333333333
+    },
+    {
+      "eval_id": "eval_063",
+      "hit@6": 1,
+      "mrr": 1.0
+    },
+    {
+      "eval_id": "eval_064",
+      "hit@6": 1,
+      "mrr": 0.5
+    },
+    {
+      "eval_id": "eval_065",
+      "hit@6": 1,
+      "mrr": 1.0
+    },
+    {
+      "eval_id": "eval_066",
+      "hit@6": 1,
+      "mrr": 1.0
+    },
+    {
+      "eval_id": "eval_067",
+      "hit@6": 1,
+      "mrr": 1.0
+    },
+    {
+      "eval_id": "eval_068",
+      "hit@6": 1,
+      "mrr": 1.0
+    },
+    {
+      "eval_id": "eval_069",
+      "hit@6": 1,
+      "mrr": 0.5
+    },
+    {
+      "eval_id": "eval_070",
+      "hit@6": 1,
+      "mrr": 1.0
+    },
+    {
+      "eval_id": "eval_071",
+      "hit@6": 1,
+      "mrr": 1.0
+    },
+    {
+      "eval_id": "eval_072",
+      "hit@6": 1,
+      "mrr": 1.0
+    },
+    {
+      "eval_id": "eval_073",
+      "hit@6": 1,
+      "mrr": 0.3333333333333333
+    },
+    {
+      "eval_id": "eval_074",
+      "hit@6": 1,
+      "mrr": 0.5
+    },
+    {
+      "eval_id": "eval_075",
+      "hit@6": 1,
+      "mrr": 1.0
+    },
+    {
+      "eval_id": "eval_076",
+      "hit@6": 1,
+      "mrr": 1.0
+    },
+    {
+      "eval_id": "eval_077",
+      "hit@6": 1,
+      "mrr": 1.0
+    },
+    {
+      "eval_id": "eval_078",
+      "hit@6": 1,
+      "mrr": 1.0
+    },
+    {
+      "eval_id": "eval_079",
+      "hit@6": 1,
+      "mrr": 0.3333333333333333
+    },
+    {
+      "eval_id": "eval_080",
+      "hit@6": 1,
+      "mrr": 1.0
+    },
+    {
+      "eval_id": "eval_081",
+      "hit@6": 1,
+      "mrr": 0.25
+    },
+    {
+      "eval_id": "eval_082",
+      "hit@6": 1,
+      "mrr": 1.0
+    },
+    {
+      "eval_id": "eval_083",
+      "hit@6": 1,
+      "mrr": 1.0
+    },
+    {
+      "eval_id": "eval_084",
+      "hit@6": 1,
+      "mrr": 0.5
+    },
+    {
+      "eval_id": "eval_085",
+      "hit@6": 1,
+      "mrr": 0.5
+    },
+    {
+      "eval_id": "eval_086",
+      "hit@6": 1,
+      "mrr": 1.0
+    },
+    {
+      "eval_id": "eval_087",
+      "hit@6": 1,
+      "mrr": 0.3333333333333333
+    },
+    {
+      "eval_id": "eval_088",
+      "hit@6": 1,
+      "mrr": 0.25
+    },
+    {
+      "eval_id": "eval_089",
+      "hit@6": 1,
+      "mrr": 1.0
+    },
+    {
+      "eval_id": "eval_090",
+      "hit@6": 1,
+      "mrr": 1.0
+    },
+    {
+      "eval_id": "eval_091",
+      "hit@6": 1,
+      "mrr": 1.0
+    },
+    {
+      "eval_id": "eval_092",
+      "hit@6": 1,
+      "mrr": 1.0
+    },
+    {
+      "eval_id": "eval_093",
+      "hit@6": 1,
+      "mrr": 1.0
+    },
+    {
+      "eval_id": "eval_094",
+      "hit@6": 1,
+      "mrr": 1.0
+    },
+    {
+      "eval_id": "eval_095",
+      "hit@6": 1,
+      "mrr": 0.5
+    },
+    {
+      "eval_id": "eval_096",
+      "hit@6": 1,
+      "mrr": 0.16666666666666666
+    },
+    {
+      "eval_id": "eval_097",
+      "hit@6": 1,
+      "mrr": 1.0
+    },
+    {
+      "eval_id": "eval_098",
+      "hit@6": 1,
+      "mrr": 0.25
+    },
+    {
+      "eval_id": "eval_099",
+      "hit@6": 0,
+      "mrr": 0.0
+    },
+    {
+      "eval_id": "eval_100",
+      "hit@6": 1,
+      "mrr": 1.0
+    }
+  ]
+}

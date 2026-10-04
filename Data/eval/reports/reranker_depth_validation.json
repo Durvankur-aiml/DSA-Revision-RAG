@@ -1,0 +1,422 @@
+{
+  "generated_at": "2026-09-27T08:15:37+00:00",
+  "dataset": {
+    "path": "D:\\Mission - Anthropic\\DSA RAG\\Data\\eval\\golden.jsonl",
+    "n": 100
+  },
+  "retrieval_configuration": {
+    "top_k": 6,
+    "semantic_candidates": 40,
+    "lexical_candidates": 40,
+    "min_score_threshold": 0.25,
+    "fusion_weights": {
+      "title": 0.6,
+      "semantic": 0.3,
+      "text": 0.1
+    },
+    "exact_title_boost": 0.2,
+    "embedding_model": "all-MiniLM-L6-v2",
+    "vector_size": 384,
+    "qdrant_collection": "striver_a2z",
+    "gemini_model": "gemini-3.7-flash",
+    "git_commit": "178d849"
+  },
+  "reranker": {
+    "model_name": "BAAI/bge-reranker-base",
+    "device": "cuda",
+    "batch_size": 16,
+    "depths": [
+      60,
+      70,
+      80
+    ]
+  },
+  "comparisons": [
+    {
+      "experiment": "Baseline",
+      "depth": null,
+      "hit@1": 0.62,
+      "hit@3": 0.8,
+      "hit@5": 0.87,
+      "hit@6": 0.91,
+      "recall@6": 0.91,
+      "recall@20_cand": 0.98,
+      "mrr": 0.7253333333333335,
+      "retrieval_p50_s": 0.18169459999990067,
+      "rerank_p50_s": null,
+      "rerank_p95_s": null,
+      "total_p50_s": 0.18169459999990067,
+      "total_p95_s": 0.21154000000024098
+    },
+    {
+      "experiment": "CrossEncoder",
+      "depth": 60,
+      "hit@1": 0.84,
+      "hit@3": 0.95,
+      "hit@5": 0.97,
+      "hit@6": 0.99,
+      "recall@6": 0.99,
+      "recall@20_cand": 0.98,
+      "mrr": 0.8995000000000001,
+      "retrieval_p50_s": 0.1698976000006951,
+      "rerank_p50_s": 0.8477298999987397,
+      "rerank_p95_s": 0.9026850999998715,
+      "total_p50_s": 1.0194812999998248,
+      "total_p95_s": 1.090472800000498
+    },
+    {
+      "experiment": "CrossEncoder",
+      "depth": 70,
+      "hit@1": 0.85,
+      "hit@3": 0.96,
+      "hit@5": 0.98,
+      "hit@6": 1.0,
+      "recall@6": 1.0,
+      "recall@20_cand": 0.98,
+      "mrr": 0.9095,
+      "retrieval_p50_s": 0.1700001000008342,
+      "rerank_p50_s": 0.9968762999997125,
+      "rerank_p95_s": 1.068855399998938,
+      "total_p50_s": 1.1656521999993856,
+      "total_p95_s": 1.2465429000003496
+    },
+    {
+      "experiment": "CrossEncoder",
+      "depth": 80,
+      "hit@1": 0.85,
+      "hit@3": 0.96,
+      "hit@5": 0.98,
+      "hit@6": 1.0,
+      "recall@6": 1.0,
+      "recall@20_cand": 0.98,
+      "mrr": 0.9095,
+      "retrieval_p50_s": 0.1623717000002216,
+      "rerank_p50_s": 1.0508525000004738,
+      "rerank_p95_s": 1.1942635999985214,
+      "total_p50_s": 1.2142492000020866,
+      "total_p95_s": 1.3583716999983153
+    }
+  ],
+  "candidate_pool_invariance": {
+    "identical_across_variants": true,
+    "violations": []
+  },
+  "failure_matrix": [
+    {
+      "eval_id": "eval_002",
+      "question": "What is lower bound and upper bound in binary search?",
+      "expected_video_ids": [
+        "6zhGS79oQ4k"
+      ],
+      "level": "video",
+      "pool_point_rank": 48,
+      "baseline": {
+        "rank": null,
+        "hit": false
+      },
+      "depths": {
+        "60": {
+          "rank": 2,
+          "hit": true,
+          "score": 0.9967621564865112
+        },
+        "70": {
+          "rank": 2,
+          "hit": true,
+          "score": 0.9972230195999146
+        },
+        "80": {
+          "rank": 2,
+          "hit": true,
+          "score": 0.9972230195999146
+        }
+      }
+    },
+    {
+      "eval_id": "eval_005",
+      "question": "How does binary search work on the answer space, like Koko eating bananas?",
+      "expected_video_ids": [
+        "qyfekrNni90"
+      ],
+      "level": "video",
+      "pool_point_rank": 63,
+      "baseline": {
+        "rank": null,
+        "hit": false
+      },
+      "depths": {
+        "60": {
+          "rank": null,
+          "hit": false,
+          "score": null
+        },
+        "70": {
+          "rank": 1,
+          "hit": true,
+          "score": 0.964775800704956
+        },
+        "80": {
+          "rank": 1,
+          "hit": true,
+          "score": 0.964775800704956
+        }
+      }
+    },
+    {
+      "eval_id": "eval_012",
+      "question": "How does the longest substring without repeating characters work?",
+      "expected_video_ids": [
+        "-zSxTJkcdAo"
+      ],
+      "level": "video",
+      "pool_point_rank": 41,
+      "baseline": {
+        "rank": null,
+        "hit": false
+      },
+      "depths": {
+        "60": {
+          "rank": 1,
+          "hit": true,
+          "score": 0.9938557744026184
+        },
+        "70": {
+          "rank": 1,
+          "hit": true,
+          "score": 0.9938557744026184
+        },
+        "80": {
+          "rank": 1,
+          "hit": true,
+          "score": 0.9938557744026184
+        }
+      }
+    },
+    {
+      "eval_id": "eval_018",
+      "question": "What is the minimum window substring approach?",
+      "expected_video_ids": [
+        "WJaij9ffOIY"
+      ],
+      "level": "video",
+      "pool_point_rank": 42,
+      "baseline": {
+        "rank": null,
+        "hit": false
+      },
+      "depths": {
+        "60": {
+          "rank": 1,
+          "hit": true,
+          "score": 0.9882320761680603
+        },
+        "70": {
+          "rank": 1,
+          "hit": true,
+          "score": 0.9882320761680603
+        },
+        "80": {
+          "rank": 1,
+          "hit": true,
+          "score": 0.9882320761680603
+        }
+      }
+    },
+    {
+      "eval_id": "eval_033",
+      "question": "How does Floyd's cycle detection work for linked lists?",
+      "expected_video_ids": [
+        "wiOo4DC5GGA"
+      ],
+      "level": "video",
+      "pool_point_rank": 60,
+      "baseline": {
+        "rank": null,
+        "hit": false
+      },
+      "depths": {
+        "60": {
+          "rank": 1,
+          "hit": true,
+          "score": 0.3385142385959625
+        },
+        "70": {
+          "rank": 1,
+          "hit": true,
+          "score": 0.33851397037506104
+        },
+        "80": {
+          "rank": 1,
+          "hit": true,
+          "score": 0.33851397037506104
+        }
+      }
+    },
+    {
+      "eval_id": "eval_045",
+      "question": "Explain the tree traversals: inorder, preorder and postorder.",
+      "expected_video_ids": [
+        "jmy0LaGET1I"
+      ],
+      "level": "video",
+      "pool_point_rank": 19,
+      "baseline": {
+        "rank": null,
+        "hit": false
+      },
+      "depths": {
+        "60": {
+          "rank": 2,
+          "hit": true,
+          "score": 0.9757874011993408
+        },
+        "70": {
+          "rank": 2,
+          "hit": true,
+          "score": 0.9757874011993408
+        },
+        "80": {
+          "rank": 2,
+          "hit": true,
+          "score": 0.9757874011993408
+        }
+      }
+    },
+    {
+      "eval_id": "eval_050",
+      "question": "Explain Morris traversal for inorder without recursion or stack.",
+      "expected_video_ids": [
+        "80Zug6D1_r4"
+      ],
+      "level": "video",
+      "pool_point_rank": 47,
+      "baseline": {
+        "rank": null,
+        "hit": false
+      },
+      "depths": {
+        "60": {
+          "rank": 1,
+          "hit": true,
+          "score": 0.8682459592819214
+        },
+        "70": {
+          "rank": 1,
+          "hit": true,
+          "score": 0.8682460784912109
+        },
+        "80": {
+          "rank": 1,
+          "hit": true,
+          "score": 0.8682460784912109
+        }
+      }
+    },
+    {
+      "eval_id": "eval_057",
+      "question": "How do I validate whether a binary tree is a BST?",
+      "expected_video_ids": [
+        "f-sj7I5oXEI"
+      ],
+      "level": "video",
+      "pool_point_rank": 51,
+      "baseline": {
+        "rank": null,
+        "hit": false
+      },
+      "depths": {
+        "60": {
+          "rank": 1,
+          "hit": true,
+          "score": 0.9901195764541626
+        },
+        "70": {
+          "rank": 1,
+          "hit": true,
+          "score": 0.9901195764541626
+        },
+        "80": {
+          "rank": 1,
+          "hit": true,
+          "score": 0.9901195764541626
+        }
+      }
+    },
+    {
+      "eval_id": "eval_099",
+      "question": "How does lower bound work and where is it used in binary search?",
+      "expected_video_ids": [
+        "6zhGS79oQ4k"
+      ],
+      "level": "video",
+      "pool_point_rank": 50,
+      "baseline": {
+        "rank": null,
+        "hit": false
+      },
+      "depths": {
+        "60": {
+          "rank": 2,
+          "hit": true,
+          "score": 0.97704017162323
+        },
+        "70": {
+          "rank": 2,
+          "hit": true,
+          "score": 0.97704017162323
+        },
+        "80": {
+          "rank": 2,
+          "hit": true,
+          "score": 0.97704017162323
+        }
+      }
+    },
+    {
+      "eval_id": "eval_085",
+      "question": "How does merge sort work with its dry run?",
+      "expected_video_ids": [
+        "ogjf7ORKfd8"
+      ],
+      "level": "exact",
+      "pool_point_rank": 2,
+      "baseline": {
+        "rank": 2,
+        "hit": true
+      },
+      "depths": {
+        "60": {
+          "rank": 1,
+          "hit": true,
+          "score": 0.9931555390357971
+        },
+        "70": {
+          "rank": 1,
+          "hit": true,
+          "score": 0.9931555390357971
+        },
+        "80": {
+          "rank": 1,
+          "hit": true,
+          "score": 0.9931555390357971
+        }
+      }
+    }
+  ],
+  "determinism": {
+    "identical_excluding_latency": true,
+    "scores_identical": true,
+    "method": "two independent full runs (baseline + depths 60/70/80); timestamps and wall-clock latency excluded from comparison"
+  },
+  "production_integrity": {
+    "main_unchanged": true,
+    "ask_imports_reranker": false,
+    "qdrant_points": 4850,
+    "golden_sha16": "7906f5d4156fef20"
+  },
+  "test_result": {
+    "suite": "pytest -p no:cacheprovider",
+    "passed": 251,
+    "failed": 0
+  }
+}
