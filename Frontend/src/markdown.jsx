@@ -2,29 +2,36 @@
  * Minimal, dependency-free Markdown renderer for AI answers.
  *
  * WHY not a Markdown package: the backend answers use a small, known
- * subset of Markdown (headings, bold, bullets, ordered lists, inline
- * code, fenced code blocks, horizontal rules). Rendering it to React
- * elements directly avoids both a dependency and any HTML-injection
- * surface: nothing here uses dangerouslySetInnerHTML, and all text
- * content is escaped by React itself.
+ * subset of Markdown. Rendering it to React elements directly avoids
+ * both a dependency and any HTML-injection surface: nothing here uses
+ * dangerouslySetInnerHTML, and all text content is escaped by React
+ * itself.
  *
  * Supported block syntax:
  *   # / ## / ### headings
  *   - / * bullets          1. ordered lists
  *   ``` fenced code        --- horizontal rules
  *   paragraphs
- * Inline: **bold**, *italic*, `code`
+ * Inline: **bold**, *italic*, `code`, [text](https://url)
+ *
+ * Fenced code renders through the CodeBlock component (language label
+ * + copy button). Links are restricted to https/http/mailto and open
+ * safely in a new tab; anything else renders as plain text.
  */
 
 import React from 'react';
+import CodeBlock from './components/CodeBlock';
 
 // ---------------------------------------------------------------------------
 // Inline formatting -> React nodes
 // ---------------------------------------------------------------------------
 
+// Combined tokenizer: bold, italic, inline code, links.
+const INLINE_PATTERN = /(\*\*[^*]+\*\*|\*[^*\n]+\*|`[^`]+`|\[[^\]]+\]\((?:https?:\/\/|mailto:)[^\s)]+\))/g;
+const LINK_PATTERN = /^\[([^\]]+)\]\((https?:\/\/[^\s)]+|mailto:[^\s)]+)\)$/;
+
 function renderInline(text, keyPrefix) {
-  // Tokenize **bold**, *italic*, `code` with a single combined regex.
-  const pattern = /(\*\*[^*]+\*\*|\*[^*\n]+\*|`[^`]+`)/g;
+  const pattern = new RegExp(INLINE_PATTERN);
   const nodes = [];
   let lastIndex = 0;
   let match;
@@ -36,7 +43,15 @@ function renderInline(text, keyPrefix) {
     }
     const token = match[0];
     const key = `${keyPrefix}-i${i++}`;
-    if (token.startsWith('**')) {
+
+    const linkMatch = LINK_PATTERN.exec(token);
+    if (linkMatch) {
+      nodes.push(
+        <a key={key} href={linkMatch[2]} target="_blank" rel="noopener noreferrer">
+          {linkMatch[1]}
+        </a>
+      );
+    } else if (token.startsWith('**')) {
       nodes.push(<strong key={key}>{token.slice(2, -2)}</strong>);
     } else if (token.startsWith('`')) {
       nodes.push(<code key={key} className="inline-code">{token.slice(1, -1)}</code>);
@@ -62,8 +77,9 @@ function parseBlocks(lines) {
   while (i < lines.length) {
     const line = lines[i];
 
-    // Fenced code block
+    // Fenced code block: ``` optionally followed by a language tag.
     if (line.trimStart().startsWith('```')) {
+      const language = line.trim().replace(/^```/, '').trim().toLowerCase();
       const codeLines = [];
       i += 1;
       while (i < lines.length && !lines[i].trimStart().startsWith('```')) {
@@ -71,7 +87,7 @@ function parseBlocks(lines) {
         i += 1;
       }
       i += 1; // closing fence
-      blocks.push({ type: 'code', lines: codeLines });
+      blocks.push({ type: 'code', lines: codeLines, language });
       continue;
     }
 
@@ -178,9 +194,11 @@ export default function Markdown({ text }) {
             );
           case 'code':
             return (
-              <pre key={key}>
-                <code>{block.lines.join('\n')}</code>
-              </pre>
+              <CodeBlock
+                key={key}
+                code={block.lines.join('\n')}
+                language={block.language}
+              />
             );
           case 'hr':
             return <hr key={key} />;

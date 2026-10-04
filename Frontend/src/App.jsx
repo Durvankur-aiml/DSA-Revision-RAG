@@ -1,97 +1,138 @@
 import { useCallback, useRef, useState } from 'react';
+import { MotionConfig } from 'framer-motion';
 import { askQuestion } from './api';
 import Header from './components/Header';
+import Footer from './components/layout/Footer';
 import EmptyState from './components/EmptyState';
 import QuestionInput from './components/QuestionInput';
 import Conversation from './components/Conversation';
 import LoadingState from './components/LoadingState';
 import ErrorState from './components/ErrorState';
 
-let nextMessageId = 1;
-
 /**
- * Mission Anthropic — Striver A2Z Knowledge Engine.
+ * ALGOFORGE — Navigate the world of algorithms.
+ *
+ * Shell + chat state. (The internal project codename must never
+ * appear in user-facing UI.)
  *
  * State model:
- *   messages[]   completed question/answer pairs in this session
+ *   messages[]   full exchange history:
+ *                  { id, role: "user", question }
+ *                  { id, role: "assistant", answer, sources }
+ *                  { id, role: "assistant", error, question, failed }
  *   isLoading    exactly one /ask request may be in flight
- *   lastError    user-safe error shown with a manual retry
+ *   lastError    connection-level error before any transcript exists
  *
  * Each question is an independent /ask call; history is display-only
  * (the backend contract takes a single question, no conversation).
+ * A failed request stays in the transcript as an inline error on its
+ * own assistant message, with a Retry action (manual, quota-safe).
+ *
+ * Motion: MotionConfig reducedMotion="user" disables animation for
+ * users with prefers-reduced-motion.
  */
 export default function App() {
   const [messages, setMessages] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [lastError, setError] = useState(null);
-  // The last question that failed, for the manual "Try again" button.
-  const lastQuestionRef = useRef(null);
+  const [lastError, setLastError] = useState(null);
 
-  const handleAsk = useCallback(
-    async (question) => {
-      const trimmed = (question ?? '').trim();
-      if (!trimmed || isLoading) return; // no duplicate submissions
+  // Monotonic id counter survives HMR re-evaluation (module-level
+  // counters reset on hot reload and duplicate keys).
+  const nextMessageIdRef = useRef(1);
+  const nextMessageId = () => nextMessageIdRef.current++;
+  const isLoadingRef = useRef(false);
 
-      setError(null);
-      setIsLoading(true);
+  const handleAsk = useCallback(async (rawQuestion) => {
+    const trimmed = (rawQuestion ?? '').trim();
+    if (!trimmed) return; // composer already blocks; defense in depth
+    if (isLoadingRef.current) return; // no duplicate submissions
 
+    isLoadingRef.current = true;
+    setIsLoading(true);
+    setLastError(null);
+
+    setMessages((prev) => [
+      ...prev,
+      { id: nextMessageId(), role: 'user', question: trimmed },
+    ]);
+
+    try {
+      const response = await askQuestion(trimmed);
       setMessages((prev) => [
         ...prev,
-        { id: nextMessageId++, role: 'user', question: trimmed },
+        {
+          id: nextMessageId(),
+          role: 'assistant',
+          answer: response.answer,
+          sources: response.sources,
+        },
       ]);
-      lastQuestionRef.current = trimmed;
-
-      try {
-        const response = await askQuestion(trimmed);
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: nextMessageId++,
-            role: 'assistant',
-            answer: response.answer,
-            sources: response.sources,
-          },
-        ]);
-      } catch (error) {
-        setError(error.message);
-      } finally {
-        setIsLoading(false);
-      }
-    },
-    [isLoading]
-  );
-
-  function handleRetry() {
-    if (lastQuestionRef.current) {
-      handleAsk(lastQuestionRef.current);
+    } catch (error) {
+      setLastError(error.message);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: nextMessageId(),
+          role: 'assistant',
+          error: error.message,
+          question: trimmed,
+          failed: true,
+        },
+      ]);
+    } finally {
+      isLoadingRef.current = false;
+      setIsLoading(false);
     }
+  }, []);
+
+  function handleRetry(question) {
+    if (!question || isLoadingRef.current) return;
+    // Remove the failed assistant message, then re-ask. If this was
+    // the connection-level error, clear it too.
+    setLastError(null);
+    setMessages((prev) => {
+      const index = prev.findIndex(
+        (m) => m.failed && m.question === question
+      );
+      if (index === -1) return prev;
+      const copy = [...prev];
+      copy.splice(index, 1);
+      return copy;
+    });
+    handleAsk(question);
   }
 
+  const hasTranscript = messages.length > 0;
+
   return (
-    <div className="app">
-      <Header />
+    <MotionConfig reducedMotion="user">
+      <div className="app">
+        <Header />
 
-      <main className="main">
-        {messages.length === 0 && !isLoading && !lastError ? (
-          <EmptyState onExampleSelect={handleAsk} />
-        ) : (
-          <Conversation messages={messages} />
-        )}
+        <main className="main">
+          {!hasTranscript && !isLoading ? (
+            <>
+              {lastError && (
+                <ErrorState message={lastError} onRetry={undefined} />
+              )}
+              <EmptyState onExampleSelect={handleAsk} />
+            </>
+          ) : (
+            <>
+              <Conversation
+                messages={messages}
+                isLoading={isLoading}
+                onRetry={handleRetry}
+              />
+              {isLoading && <LoadingState />}
+            </>
+          )}
 
-        {isLoading && <LoadingState />}
-        {lastError && !isLoading && (
-          <ErrorState message={lastError} onRetry={handleRetry} />
-        )}
+          <QuestionInput onSubmit={handleAsk} disabled={isLoading} />
+        </main>
 
-        <QuestionInput onSubmit={handleAsk} disabled={isLoading} />
-      </main>
-
-      <footer className="footer">
-        <p>
-          Answers are grounded in the indexed Striver A2Z course. Sources link
-          to the exact video timestamp.
-        </p>
-      </footer>
-    </div>
+        <Footer />
+      </div>
+    </MotionConfig>
   );
 }

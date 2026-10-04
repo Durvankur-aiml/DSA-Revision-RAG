@@ -1,5 +1,6 @@
 /**
- * API client for the Mission Anthropic backend.
+ * API client for the ALGOFORGE backend.
+ * (The internal project codename must never appear in user-facing UI.)
  *
  * Contract (backend is the source of truth):
  *   POST {VITE_API_URL}/ask    { question: string }
@@ -77,7 +78,7 @@ export async function askQuestion(question) {
     });
   } catch {
     // Network-level failure (backend down, CORS, DNS...).
-    throw new Error('Could not reach the Mission Anthropic API. Is the backend running?');
+    throw new Error('Could not reach the ALGOFORGE API. Is the backend running?');
   }
 
   let body = null;

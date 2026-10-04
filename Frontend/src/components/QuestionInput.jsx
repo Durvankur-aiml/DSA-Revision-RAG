@@ -1,20 +1,37 @@
 import { useEffect, useRef, useState } from 'react';
+import { ArrowUp } from 'lucide-react';
+
+const MAX_HEIGHT = 160; // px; beyond this the textarea scrolls internally
 
 /**
- * Premium question input.
- * - Enter submits; Shift+Enter inserts a newline
- * - disabled while a request is in flight (prevents duplicate submits)
- * - whitespace-only input cannot be submitted (backend stays authoritative)
+ * ALGOFORGE composer.
+ *
+ * - Auto-growing <textarea> with a hard max height (internal scroll
+ *   beyond it) — long multi-line questions work as intended.
+ * - Enter submits; Shift+Enter inserts a newline. During IME
+ *   composition (Enter confirms the candidate), Enter does NOT submit.
+ * - Empty/whitespace-only questions cannot be submitted; the backend
+ *   remains authoritative (validate_question).
+ * - Disabled while a request is in flight (no duplicate submissions).
  */
 export default function QuestionInput({ onSubmit, disabled, autoFocus }) {
   const [value, setValue] = useState('');
-  const inputRef = useRef(null);
+  const textareaRef = useRef(null);
 
   useEffect(() => {
-    if (autoFocus && inputRef.current) {
-      inputRef.current.focus();
+    if (autoFocus && textareaRef.current) {
+      textareaRef.current.focus();
     }
   }, [autoFocus]);
+
+  // Auto-grow: reset height, then clamp to MAX_HEIGHT so overflow
+  // becomes internal scrolling.
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, MAX_HEIGHT)}px`;
+  }, [value]);
 
   const canSubmit = !disabled && value.trim().length > 0;
 
@@ -26,7 +43,11 @@ export default function QuestionInput({ onSubmit, disabled, autoFocus }) {
   }
 
   function handleKeyDown(event) {
-    if (event.key === 'Enter' && !event.shiftKey) {
+    if (
+      event.key === 'Enter' &&
+      !event.shiftKey &&
+      !event.nativeEvent.isComposing
+    ) {
       event.preventDefault();
       handleSubmit(event);
     }
@@ -38,14 +59,14 @@ export default function QuestionInput({ onSubmit, disabled, autoFocus }) {
         Your DSA question
       </label>
       <div className={`input-shell ${disabled ? 'input-disabled' : ''}`}>
-        <input
+        <textarea
           id="question-input"
-          ref={inputRef}
-          type="text"
+          ref={textareaRef}
+          rows={1}
           value={value}
           onChange={(event) => setValue(event.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="What do you want to learn?"
+          placeholder="Ask about algorithms, data structures, complexity…"
           autoComplete="off"
           disabled={disabled}
           aria-describedby="question-hint"
@@ -54,23 +75,14 @@ export default function QuestionInput({ onSubmit, disabled, autoFocus }) {
           type="submit"
           className="submit-button"
           disabled={!canSubmit}
-          aria-label="Ask the knowledge engine"
+          aria-label={
+            disabled
+              ? 'Waiting for the current answer'
+              : 'Send question'
+          }
+          title={canSubmit ? 'Send (Enter)' : undefined}
         >
-          <svg
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            aria-hidden="true"
-          >
-            <path
-              d="M5 12h14M13 6l6 6-6 6"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
+          <ArrowUp size={17} strokeWidth={2.4} aria-hidden="true" />
         </button>
       </div>
       <p id="question-hint" className="input-hint">

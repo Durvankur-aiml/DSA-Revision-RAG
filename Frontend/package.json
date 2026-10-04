@@ -1,15 +1,19 @@
 {
-  "name": "mission-anthropic-frontend",
+  "name": "algoforge-frontend",
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "Mission Anthropic — Striver A2Z Knowledge Engine (RAG learning interface)",
+  "description": "ALGOFORGE — Navigate the world of algorithms. RAG learning interface for the Striver A2Z course.",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview"
   },
   "dependencies": {
+    "@fontsource-variable/inter": "^5.3.0",
+    "@fontsource-variable/jetbrains-mono": "^5.3.0",
+    "framer-motion": "^13.4.4",
+    "lucide-react": "^1.48.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
   },

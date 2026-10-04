@@ -27,3 +27,12 @@ export function formatScore(score) {
   const value = Number.isFinite(score) ? Math.min(1, Math.max(0, score)) : 0;
   return value.toFixed(2);
 }
+
+/**
+ * Format a relevance score as a percentage for accessible labels:
+ * 1 -> "100%", 0.7285 -> "73%".
+ */
+export function formatPercent(score) {
+  const value = Number.isFinite(score) ? Math.min(1, Math.max(0, score)) : 0;
+  return `${Math.round(value * 100)}%`;
+}

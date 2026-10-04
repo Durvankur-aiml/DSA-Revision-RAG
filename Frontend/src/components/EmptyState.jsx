@@ -1,28 +1,36 @@
+import AlgoForgeLogo from './brand/AlgoForgeLogo';
+
 /**
  * Landing / empty state shown before the first question.
- * Example chips submit directly (one click = one request).
+ *
+ * Hierarchy: brand wordmark -> tagline -> scope statement -> example
+ * prompts. Examples submit directly (one click = one request).
  */
 export default function EmptyState({ onExampleSelect }) {
   const examples = [
-    'What is binary search?',
-    'Explain binary search tree.',
-    'What is the time complexity of merge sort?',
-    'Explain two pointer technique.',
+    'Explain binary search step by step',
+    'When should I use sliding window?',
+    'Explain the two pointer pattern',
+    "What's the time complexity of merge sort?",
   ];
 
   return (
     <section className="empty-state" aria-labelledby="empty-heading">
-      <p className="empty-eyebrow">ASK YOUR DSA MENTOR</p>
+      <div className="empty-logo" aria-hidden="true">
+        <AlgoForgeLogo size={64} />
+      </div>
+
       <h1 id="empty-heading" className="empty-heading">
-        Ask your DSA mentor.
+        ALGOFORGE
       </h1>
-      <p className="empty-subtitle">
-        Search the Striver A2Z knowledge base and get grounded answers with
-        video timestamps.
+      <p className="empty-tagline">Navigate the world of algorithms.</p>
+
+      <p className="empty-scope">
+        Ask questions about data structures, algorithms, patterns,
+        complexity, or problems from the Striver A2Z knowledge base.
       </p>
 
       <div className="examples" role="list" aria-label="Example questions">
-        <span className="examples-label">Try asking</span>
         {examples.map((example) => (
           <button
             key={example}
