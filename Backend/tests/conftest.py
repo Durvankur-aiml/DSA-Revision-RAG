@@ -26,10 +26,19 @@ from __future__ import annotations
 
 import os
 import sys
+import tempfile
 import types
 from pathlib import Path
 
 import pytest
+
+# Route the observability layer's rotating perf log into a throwaway
+# session directory BEFORE any application module is imported (obs.py
+# configures itself at import time). Keeps the test run fully offline
+# and prevents tests from writing into the repo's logs/ directory.
+os.environ["ALGOFORGE_LOG_DIR"] = tempfile.mkdtemp(
+    prefix="algoforge-test-logs-"
+)
 
 # Fake credential used as the production module's api_key for the whole
 # test session. Leak tests assert this never appears in responses.
@@ -101,6 +110,7 @@ _install_offline_stubs()
 # Import the application modules once, with the stubs in place.
 sys.path.insert(0, str(BACKEND_DIR))
 import ask  # noqa: E402
+import obs  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -316,6 +326,20 @@ def retrieval_mock(monkeypatch, main_module):
             ask._set_retrieval_scores(
                 {**ask._retrieval_scores_var.get(), str(hit.id): float(hit.score)}
             )
+        # Mirror production observability bookkeeping (obs.set_retrieval_meta
+        # calls inside retrieve_chunks) using the real pure functions.
+        topic = ask.extract_topic(question)
+        exact = any(
+            ask.title_exact_match(question, hit.payload.get("video_title", ""))
+            >= 0.95
+            for hit in selected
+        )
+        obs.set_retrieval_meta(
+            strategy="hybrid",
+            topic=topic,
+            exact_topic=exact,
+            candidate_count=len(selected),
+        )
         return selected
 
     monkeypatch.setattr(ask, "retrieve_chunks", _fake_retrieve)

@@ -1,13 +1,17 @@
-from fastapi import FastAPI, HTTPException
+import time
+
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+import obs
 from ask import (
     retrieve_chunks,
     build_prompt,
     ask_gemini,
     format_sources,
     validate_question,
+    _perf,
 )
 
 
@@ -16,7 +20,7 @@ from ask import (
 # ============================================================
 
 app = FastAPI(
-    title="Mission Anthropic API",
+    title="ALGOFORGE API",
     description="AI DSA Tutor powered by Striver A2Z RAG",
     version="1.0.0",
 )
@@ -48,6 +52,43 @@ app.add_middleware(
 )
 
 
+# ------------------------------------------------------------
+# Observability middleware — request ID + structured lifecycle
+# ------------------------------------------------------------
+
+@app.middleware("http")
+async def observability_middleware(request: Request, call_next):
+    """Attach a request id, time the request, and emit the lifecycle events.
+
+    The RequestContext object is created ONCE here and afterwards only
+    mutated (never re-bound in the ContextVar), so values recorded inside
+    threadpool endpoints are visible in this middleware afterwards.
+    CORS preflights (OPTIONS) and health paths are not logged as events.
+    """
+    if request.method == "OPTIONS":
+        return await call_next(request)
+
+    request_id = obs.adopt_or_create_request_id(
+        request.headers.get("x-request-id")
+    )
+    ctx = obs.begin_request(request_id, request.method, request.url.path)
+
+    try:
+        response = await call_next(request)
+    except Exception:
+        obs.set_failure("unhandled_exception")
+        obs.end_request()
+        raise
+
+    ctx.http_status = response.status_code
+    if ctx.failure_category is None and response.status_code >= 500:
+        obs.set_failure(f"http_{response.status_code}")
+
+    response.headers["X-Request-ID"] = request_id
+    obs.end_request()
+    return response
+
+
 # ============================================================
 # REQUEST / RESPONSE MODELS
 # ============================================================
@@ -76,7 +117,7 @@ class AskResponse(BaseModel):
 def root():
     return {
         "status": "online",
-        "service": "Mission Anthropic API",
+        "service": "ALGOFORGE API",
     }
 
 
@@ -93,14 +134,22 @@ def health():
 
 @app.post("/ask", response_model=AskResponse)
 def ask(request: AskRequest):
+    _t0 = time.monotonic()
+    _t = time.monotonic()
 
     # --------------------------------------------------------
     # 1. Validate question
     # --------------------------------------------------------
 
     question, error = validate_question(request.question)
+    obs.set_question_meta(len(request.question))
+    _perf("api_validation", _t)
+    _t = time.monotonic()
 
     if error:
+        obs.set_failure(
+            "empty_question" if "non-empty" in error else "question_too_long"
+        )
         raise HTTPException(
             status_code=400,
             detail=error,
@@ -111,8 +160,12 @@ def ask(request: AskRequest):
     # --------------------------------------------------------
 
     chunks = retrieve_chunks(question)
+    obs.set_phase_latency("retrieval", time.monotonic() - _t)
+    _perf("api_retrieval", _t)
+    _t = time.monotonic()
 
     if not chunks:
+        obs.set_failure("no_relevant_content")
         raise HTTPException(
             status_code=404,
             detail="No relevant content found in the A2Z knowledge base.",
@@ -126,8 +179,11 @@ def ask(request: AskRequest):
         question,
         chunks,
     )
+    _perf("api_prompt_build", _t)
+    _t = time.monotonic()
 
     if user_message is None:
+        obs.set_failure("no_usable_text")
         raise HTTPException(
             status_code=404,
             detail="Retrieved content contained no usable text.",
@@ -140,8 +196,12 @@ def ask(request: AskRequest):
     answer = ask_gemini(
         user_message,
     )
+    obs.set_phase_latency("generation", time.monotonic() - _t)
+    _perf("api_gemini", _t)
+    _t = time.monotonic()
 
     if answer is None:
+        obs.set_failure("generation_failed")
         raise HTTPException(
             status_code=502,
             detail="Failed to generate an answer.",
@@ -212,9 +272,12 @@ def ask(request: AskRequest):
             )
         )
 
-    # --------------------------------------------------------
-    # 6. Return structured API response
-    # --------------------------------------------------------
+    # Request metadata for the observability layer. Retrieval strategy
+    # and topic are recorded inside retrieve_chunks (ask.py) where they
+    # are actually computed.
+    obs.set_source_count(len(sources))
+    _perf("api_source_mapping", _t)
+    _perf("request_total", _t0)
 
     return AskResponse(
         answer=answer,
