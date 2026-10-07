@@ -236,6 +236,9 @@ def fake_clock(monkeypatch):
 @pytest.fixture()
 def gemini_mock(monkeypatch):
     """Install a fresh FakeInteractionsAPI as ask.genai_client."""
+    monkeypatch.setenv("LLM_PROVIDER", "gemini")
+    from llm.gateway import reset_default_gateway
+    reset_default_gateway()
     api = FakeInteractionsAPI()
     monkeypatch.setattr(ask, "genai_client", FakeGenaiClient(api))
     return api
