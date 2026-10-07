@@ -65,6 +65,30 @@ class RequestContext:
         "reranker_model",
         "reranker_device",
         "reranker_depth",
+        "llm_provider",
+        "llm_model",
+        "llm_fallback_used",
+        "llm_fallback_provider",
+        "llm_tokens",
+        "agent_intent",
+        "agent_response_mode",
+        "agent_retrieval_required",
+        "agent_reranking_required",
+        "citation_status",
+        "citation_count",
+        "valid_citation_count",
+        "invalid_citation_count",
+        "unsupported_claim_count",
+        "malformed_citation_count",
+        "citation_latency",
+        "agent_plan",
+        "agent_step",
+        "agent_step_status",
+        "agent_step_latency",
+        "agent_recovery_attempted",
+        "agent_generation_attempts",
+        "agent_final_status",
+        "agent_total_latency",
     )
 
     def __init__(self, request_id, method="?", path="?"):
@@ -88,6 +112,30 @@ class RequestContext:
         self.reranker_model = None
         self.reranker_device = None
         self.reranker_depth = None
+        self.llm_provider = None
+        self.llm_model = None
+        self.llm_fallback_used = None
+        self.llm_fallback_provider = None
+        self.llm_tokens = None
+        self.agent_intent = None
+        self.agent_response_mode = None
+        self.agent_retrieval_required = None
+        self.agent_reranking_required = None
+        self.citation_status = None
+        self.citation_count = None
+        self.valid_citation_count = None
+        self.invalid_citation_count = None
+        self.unsupported_claim_count = None
+        self.malformed_citation_count = None
+        self.citation_latency = None
+        self.agent_plan = None
+        self.agent_step = None
+        self.agent_step_status = None
+        self.agent_step_latency = None
+        self.agent_recovery_attempted = None
+        self.agent_generation_attempts = None
+        self.agent_final_status = None
+        self.agent_total_latency = None
 
     def snapshot(self):
         """Flat, JSON-ready dict of everything known about this request."""
@@ -118,6 +166,54 @@ class RequestContext:
             "reranker_device": self.reranker_device,
             "reranker_depth": self.reranker_depth,
         }
+        if self.llm_provider is not None:
+            data["llm_provider"] = self.llm_provider
+        if self.llm_model is not None:
+            data["llm_model"] = self.llm_model
+        if self.llm_fallback_used is not None:
+            data["llm_fallback_used"] = self.llm_fallback_used
+        if self.llm_fallback_provider is not None:
+            data["llm_fallback_provider"] = self.llm_fallback_provider
+        if self.llm_tokens is not None:
+            data["llm_tokens"] = self.llm_tokens
+        if self.agent_intent is not None:
+            data["agent_intent"] = self.agent_intent
+        if self.agent_response_mode is not None:
+            data["agent_response_mode"] = self.agent_response_mode
+        if self.agent_retrieval_required is not None:
+            data["agent_retrieval_required"] = self.agent_retrieval_required
+        if self.agent_reranking_required is not None:
+            data["agent_reranking_required"] = self.agent_reranking_required
+        if self.citation_status is not None:
+            data["citation_status"] = self.citation_status
+        if self.citation_count is not None:
+            data["citation_count"] = self.citation_count
+        if self.valid_citation_count is not None:
+            data["valid_citation_count"] = self.valid_citation_count
+        if self.invalid_citation_count is not None:
+            data["invalid_citation_count"] = self.invalid_citation_count
+        if self.unsupported_claim_count is not None:
+            data["unsupported_claim_count"] = self.unsupported_claim_count
+        if self.malformed_citation_count is not None:
+            data["malformed_citation_count"] = self.malformed_citation_count
+        if self.citation_latency is not None:
+            data["citation_latency"] = self.citation_latency
+        if self.agent_plan is not None:
+            data["agent_plan"] = self.agent_plan
+        if self.agent_step is not None:
+            data["agent_step"] = self.agent_step
+        if self.agent_step_status is not None:
+            data["agent_step_status"] = self.agent_step_status
+        if self.agent_step_latency is not None:
+            data["agent_step_latency"] = self.agent_step_latency
+        if self.agent_recovery_attempted is not None:
+            data["agent_recovery_attempted"] = self.agent_recovery_attempted
+        if self.agent_generation_attempts is not None:
+            data["agent_generation_attempts"] = self.agent_generation_attempts
+        if self.agent_final_status is not None:
+            data["agent_final_status"] = self.agent_final_status
+        if self.agent_total_latency is not None:
+            data["agent_total_latency"] = self.agent_total_latency
         return data
 
 
@@ -310,6 +406,107 @@ def set_reranker_meta(enabled=None, fallback=None, model=None, device=None,
             ctx.reranker_device = str(device)
         if depth is not None:
             ctx.reranker_depth = int(depth)
+    except Exception:
+        pass
+
+
+def set_llm_meta(provider=None, model=None, fallback_used=None,
+                 fallback_provider=None, tokens=None):
+    """Record LLM provider, model, fallback, and usage metadata for this request."""
+    try:
+        ctx = _request_ctx.get()
+        if ctx is None:
+            return
+        if provider is not None:
+            ctx.llm_provider = str(provider)
+        if model is not None:
+            ctx.llm_model = str(model)
+        if fallback_used is not None:
+            ctx.llm_fallback_used = bool(fallback_used)
+        if fallback_provider is not None:
+            ctx.llm_fallback_provider = str(fallback_provider)
+        if tokens is not None:
+            ctx.llm_tokens = int(tokens)
+    except Exception:
+        pass
+
+
+def set_agent_meta(intent=None, response_mode=None, retrieval_required=None,
+                   reranking_required=None):
+    """Record Agent Router decision metadata for this request."""
+    try:
+        ctx = _request_ctx.get()
+        if ctx is None:
+            return
+        if intent is not None:
+            ctx.agent_intent = str(intent)
+        if response_mode is not None:
+            ctx.agent_response_mode = str(response_mode)
+        if retrieval_required is not None:
+            ctx.agent_retrieval_required = bool(retrieval_required)
+        if reranking_required is not None:
+            ctx.agent_reranking_required = bool(reranking_required)
+    except Exception:
+        pass
+
+
+def set_citation_meta(status=None, count=None, valid_count=None,
+                      invalid_count=None, unsupported_count=None,
+                      malformed_count=None, latency=None):
+    """Record Grounding & Citation verification metadata for this request."""
+    try:
+        ctx = _request_ctx.get()
+        if ctx is None:
+            return
+        if status is not None:
+            ctx.citation_status = str(status)
+        if count is not None:
+            ctx.citation_count = int(count)
+        if valid_count is not None:
+            ctx.valid_citation_count = int(valid_count)
+        if invalid_count is not None:
+            ctx.invalid_citation_count = int(invalid_count)
+        if unsupported_count is not None:
+            ctx.unsupported_claim_count = int(unsupported_count)
+        if malformed_count is not None:
+            ctx.malformed_citation_count = int(malformed_count)
+        if latency is not None:
+            ctx.citation_latency = round(float(latency), 6)
+    except Exception:
+        pass
+
+
+def set_coordinator_meta(
+    plan=None,
+    step=None,
+    step_status=None,
+    step_latency=None,
+    recovery_attempted=None,
+    generation_attempts=None,
+    final_status=None,
+    total_latency=None,
+):
+    """Record Agent Coordinator orchestration metadata for this request."""
+    try:
+        ctx = _request_ctx.get()
+        if ctx is None:
+            return
+        if plan is not None:
+            ctx.agent_plan = str(plan)
+        if step is not None:
+            ctx.agent_step = str(step)
+        if step_status is not None:
+            ctx.agent_step_status = str(step_status)
+        if step_latency is not None:
+            ctx.agent_step_latency = round(float(step_latency), 6)
+        if recovery_attempted is not None:
+            ctx.agent_recovery_attempted = bool(recovery_attempted)
+        if generation_attempts is not None:
+            ctx.agent_generation_attempts = int(generation_attempts)
+        if final_status is not None:
+            ctx.agent_final_status = str(final_status)
+        if total_latency is not None:
+            ctx.agent_total_latency = round(float(total_latency), 6)
     except Exception:
         pass
 

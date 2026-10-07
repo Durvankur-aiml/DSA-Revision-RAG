@@ -11,6 +11,11 @@ from ask import (
     ask_gemini,
     format_sources,
     validate_question,
+    route_query,
+    coordinate_query,
+    AgentCoordinator,
+    verify_citations,
+    VerificationStatus,
     _perf,
 )
 
@@ -156,56 +161,64 @@ def ask(request: AskRequest):
         )
 
     # --------------------------------------------------------
-    # 2. Retrieve relevant chunks
+    # 1.5. Agent Router — Intent Classification & Strategy
     # --------------------------------------------------------
+    decision = route_query(question)
+    _perf("agent_routing", _t, extra=f"intent={decision.intent.value} mode={decision.response_mode}")
+    _t = time.monotonic()
 
-    chunks = retrieve_chunks(question)
+    # --------------------------------------------------------
+    # 2. Agent Coordinator — Controlled Multi-Step Execution
+    # --------------------------------------------------------
+    coord_result = coordinate_query(question, decision)
+    _perf("agent_coordination", _t, extra=f"plan={coord_result.plan.summary()} status={coord_result.final_status}")
+
+    if not decision.retrieval_required or coord_result.final_status == "OUT_OF_SCOPE":
+        obs.set_failure("out_of_scope")
+        raise HTTPException(
+            status_code=404,
+            detail="No relevant content found in the A2Z knowledge base. This query appears outside of the DSA course scope.",
+        )
+
+    chunks = coord_result.sources
     obs.set_phase_latency("retrieval", time.monotonic() - _t)
     _perf("api_retrieval", _t)
     _t = time.monotonic()
 
     if not chunks:
+        if coord_result.final_status == "FAILED" and coord_result.error and coord_result.error.startswith("Retrieval failed:"):
+            raise RuntimeError(coord_result.error)
+
         obs.set_failure("no_relevant_content")
         raise HTTPException(
             status_code=404,
             detail="No relevant content found in the A2Z knowledge base.",
         )
 
-    # --------------------------------------------------------
-    # 3. Build grounded prompt
-    # --------------------------------------------------------
-
-    user_message = build_prompt(
-        question,
-        chunks,
-    )
+    # 3. Prompt Build Stage Timing
     _perf("api_prompt_build", _t)
     _t = time.monotonic()
 
-    if user_message is None:
-        obs.set_failure("no_usable_text")
-        raise HTTPException(
-            status_code=404,
-            detail="Retrieved content contained no usable text.",
-        )
-
-    # --------------------------------------------------------
-    # 4. Generate answer with Gemini
-    # --------------------------------------------------------
-
-    answer = ask_gemini(
-        user_message,
-    )
+    # 4. Generation Result
+    answer = coord_result.final_answer
     obs.set_phase_latency("generation", time.monotonic() - _t)
     _perf("api_gemini", _t)
     _t = time.monotonic()
 
-    if answer is None:
+    if coord_result.final_status == "FAILED" or not answer:
         obs.set_failure("generation_failed")
         raise HTTPException(
             status_code=502,
-            detail="Failed to generate an answer.",
+            detail=coord_result.error or "Failed to generate an answer.",
         )
+
+    # 4.5. Citation Verification Stage Timing
+    _perf(
+        "api_citation_verification",
+        _t,
+        extra=f"status={coord_result.verification_status or 'PASS'}",
+    )
+    _t = time.monotonic()
 
     # --------------------------------------------------------
     # 5. Convert sources
